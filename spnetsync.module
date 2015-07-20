@@ -1,0 +1,363 @@
+<?php
+
+// ini_set('display_errors','on');
+// error_reporting(E_ALL);
+// Implements hook_menu -> iig zo lang drush nog niet werkt
+
+function spnetsync_menu() {
+
+  $items = array();
+
+  $items['admin/config/sp/spnetsync-run'] = array(
+    'title'            => 'SPNET sync uitvoeren',
+    'type'             => MENU_CALLBACK,
+    'page callback'    => 'spnetsync_sync',
+    'access arguments' => array('access administration pages'),
+    'file'             => 'spnetsync_civi.inc',
+  );
+
+  $items['admin/config/sp/spnetsync'] = array(
+    'title'            => 'SPNET sync',
+    'description'      => 'Instellingen voor SPNET synchronizatie.',
+    'type'             => MENU_NORMAL_ITEM,
+    'page callback'    => 'spnetsync_admin_list_rules',
+    'file'             => 'spnetsync.page-admin.inc',
+    'access callback' => sprbs_access_check(),
+  );
+
+  $items['admin/config/sp/spnetsync/list-rules'] = array(
+    'title'            => 'Overzicht regels',
+    'type'             => MENU_DEFAULT_LOCAL_TASK,
+    'weight'           => 0,
+    'access callback' => sprbs_access_check(),
+  );
+
+  $items['admin/config/sp/spnetsync/add-relation-role-rule'] = array(
+    'title'            => 'Relatie-rol',
+    'type'             => MENU_LOCAL_TASK,
+    'weight'           => 1,
+    'page callback'    => 'drupal_get_form',
+    'page arguments'   => array('spnetsync_admin_add_relation_role_rules'),
+    'file'             => 'spnetsync.page-admin.inc',
+    'access callback' => sprbs_access_check(),
+  );
+
+  $items['admin/config/sp/spnetsync/add-field-field-rule'] = array(
+    'title'            => 'Veld - veld',
+    'type'             => MENU_LOCAL_TASK,
+    'weight'           => 1,
+    'page callback'    => 'drupal_get_form',
+    'page arguments'   => array('spnetsync_admin_add_field_field_rules'),
+    'file'             => 'spnetsync.page-admin.inc',
+    'access callback' => sprbs_access_check(),
+  );
+
+  $items['admin/config/sp/spnetsync/delete/%/%'] = array(
+    'page callback' => 'spnetsync_delete',
+    'page arguments' => array(5,6),
+    'type'             => MENU_CALLBACK,
+    'file'             => 'spnetsync.page-admin.inc',
+    'access callback' => sprbs_access_check(),
+  );
+  return $items;
+}
+
+function spnetsync_get_civi_relationships() {
+  set_time_limit(0);
+  $civiapi     = spciviapi_get_api();
+  $relationships = array();
+
+  $civiapi->RelationshipType->Get(array(
+    'option.limit'          => 9999,
+  ));
+  $relationships_results = $civiapi->result()->values;
+  if (!empty($relationships_results)) {
+    foreach ($relationships_results as $relationship_result) {
+      $relationships[$relationship_result->id] = $relationship_result->label_a_b . ' / ' . $relationship_result->label_b_a;
+    }
+    variable_set('spnetsync_relationships', $relationships);
+    return $relationships;
+  }
+  $relationships = variable_get('spnetsync_relationships', 'FALSE');
+  drupal_set_message('Error syncing civicrm relationship types, using saved data.', 'warning');
+  return $relationships;
+}
+
+function spnetsync_get_civi_fields() {
+  set_time_limit(0);
+  $civiapi     = spciviapi_get_api();
+  $fields = array();
+
+  $civiapi->UFField->Get(array(
+    'option.limit'          => 9999,
+    'uf_group_id'           => 7,
+    'field_name' => 'email',
+  ));
+  $fields_results = $civiapi->result()->values;
+  dpm($fields_results);
+  if (!empty($fields_results)) {
+    foreach ($fields_results as $field_result) {
+      $fields[$field_result->id] = $field_result->label . ' | ' . $field_result->field_name;
+    }
+    variable_set('spnetsync_fields', $fields);
+    return $fields;
+  }
+  $fields = variable_get('spnetsync_fields', 'FALSE');
+  drupal_set_message('Error syncing civicrm fields, using saved data.', 'warning');
+  return $fields;
+}
+
+function spnetsync_sync_roles($user = FALSE) {
+  // Settings and variables.
+  $admin_rid = user_role_load_by_name('administrator')->rid;
+  $sync_roles = spnetsync_roles();
+  $rules = variable_get('spnetsync_rules');
+
+  // Create relation-role and role-relation sync tables from rules.
+  foreach ($rules['relations-roles'] as $rule) {
+    foreach ($rule['drupal_roles'] as $role_id => $role_name) {
+      foreach ($rule['civi_relations'] as $relation_id => $relation_name) {
+        $relation_role_sync_table[$relation_id][$role_id] = $role_name;
+        $role_relation_sync_table[$role_id][$relation_id] = $relation_name;
+      }
+    }
+  }
+
+  // Get user(s).
+  if ($user) {
+    $drupal_users = entity_load('user', array($user->uid));
+  }
+  else {
+    $drupal_users = entity_load('user');
+  }
+  // Remove anonymous user.
+  unset($drupal_users[0]);
+
+  // Process relations and roles for each user.
+  foreach ($drupal_users as $drupal_user) {
+    // Do not sync admin users.
+    if (isset($drupal_user->roles[$admin_rid])) {
+      continue;
+    }
+    // Get civi user relations.
+    $civi_relationships = spnetsync_get_civi_relations($drupal_user);
+    if ($civi_relationships !== FALSE) {
+      // Check if civicrm relationships need to be synced with roles.
+      foreach ($role_relation_sync_table as $role_id => $role_relations) {
+        $role_set = FALSE;
+        foreach ($role_relations as $role_relation_id => $role_relation_name) {
+          foreach ($civi_relationships as $civi_relationship) {
+            // Check relation start and end date.
+            if (spnetsync_check_date($civi_relationship)) {
+              // check if rule role relation id equals civi relation id.
+              if ($civi_relationship->relationship_type_id == $role_relation_id) {
+                spnetsync_set_role($drupal_user, $role_id);
+                $role_set = TRUE;
+                break 2;
+              }
+            }
+          }
+        }
+        if ($role_set == FALSE) {
+          spnetsync_unset_role($drupal_user, $role_id);
+        }
+      }
+    }
+  }
+}
+
+function spnetsync_roles() {
+  $sync_roles = user_roles(TRUE);
+  unset($sync_roles[user_role_load_by_name('administrator')->rid]);
+  return $sync_roles;
+}
+
+function spnetsync_set_role($user, $role_id) {
+  $sync_roles = spnetsync_roles();
+  // Set user role.
+  if (empty($user->roles[$role_id])) {
+    $user_roles = $user->roles;
+    $user_roles[$role_id] = $sync_roles[$role_id];
+    $user->roles = $user_roles;
+    user_save($user);
+    drupal_set_message('User ' . $user->name . ' role set: ' . $sync_roles[$role_id]);
+    watchdog('spnetsync', 'User ' . $user->name . ' role set: ' . $sync_roles[$role_id]);
+  }
+}
+
+function spnetsync_unset_role($user, $role_id) {
+  $sync_roles = spnetsync_roles();
+  // Unset user role.
+  if (!empty($user->roles[$role_id])) {
+    $user_roles = $user->roles;
+    unset($user_roles[$role_id]);
+    $user->roles = $user_roles;
+    user_save($user);
+    drupal_set_message('User ' . $user->name . ' role removed: ' . $sync_roles[$role_id]);
+    watchdog('spnetsync', 'User ' . $user->name . ' role removed: ' . $sync_roles[$role_id]);
+  }
+}
+
+function spnetsync_get_civi_relations($user) {
+  set_time_limit(0);
+
+  // Connect to civiapi.
+  $civiapi     = spciviapi_get_api();
+
+  // Get civicrm relationships for user.
+  $civiapi->Relationship->Get(array(
+    'sequential' => 1,
+    'option.limit' => 9999,
+    'return' => 'relationship_type_id,is_active,start_date,end_date',
+    'contact_id_a' => $user->name,
+    'is_active' => 1,
+  ));
+  $civi_relationships_results = $civiapi->result();
+  if (isset($civi_relationships_results->values)) {
+    return $civi_relationships_results->values;
+  }
+  return FALSE;
+}
+
+function spnetsync_check_date($civi_relationship) {
+  $timezone =  new DateTimeZone(date_default_timezone(FALSE));
+  $date = new DateTime('now', $timezone);
+  $date_formatted = $date->format('Y-m-d');
+  // Check civi relation start and end dates.
+  if (
+    (empty($civi_relationship->start_date) ||
+    $civi_relationship->start_date <= $date_formatted) &&
+    (empty($civi_relationship->end_date) || 
+    $civi_relationship->end_date > $date_formatted)
+  ) {
+    return TRUE;
+  }
+  return FALSE;
+}
+
+function spnetsync_get_civi_contact_fields() {
+  set_time_limit(0);
+  $civiapi     = spciviapi_get_api();
+  $fields = array();
+  $civiapi->Contact->Getfields(array(
+    'sequential' => 1,
+    'option.limit' => 9999,
+  ));
+  $civi_fields_results = $civiapi->result();
+  if (isset($civi_fields_results->values)) {
+    foreach ($civi_fields_results->values as $value) {
+      if (isset($value->title) && isset($value->name)) {
+        $results[$value->name] = $value->title;
+      }
+      elseif (isset($value->label) && isset($value->groupTitle) && isset($value->name)) {
+        $results[$value->name] = $value->groupTitle . ': ' . $value->label;
+      }
+    }
+    return $results;
+  }
+  return FALSE;
+}
+
+function spnetsync_get_civi_email_locations() {
+  set_time_limit(0);
+  $civiapi     = spciviapi_get_api();
+  $fields = array();
+  $civiapi->Email->Getoptions(array(
+    'sequential' => 1,
+    'option.limit' => 9999,
+    'field'          => 'location_type',
+  ));
+  $civi_locations_results = $civiapi->result();
+  if (isset($civi_locations_results->values)) {
+    foreach($civi_locations_results->values as $value) {
+      $results[$value->key] = $value->value;
+    }
+    return $results;
+  }
+  return FALSE;
+}
+
+function spnetsync_get_civi_phone_locations() {
+  set_time_limit(0);
+  $civiapi     = spciviapi_get_api();
+  $fields = array();
+  $civiapi->Email->Getoptions(array(
+    'sequential' => 1,
+    'option.limit' => 9999,
+    'field'          => 'location_type',
+  ));
+  $civi_locations_results = $civiapi->result();
+  if (isset($civi_locations_results->values)) {
+    foreach($civi_locations_results->values as $value) {
+      $results[$value->key] = $value->value;
+    }
+    return $results;
+  }
+  return FALSE;
+}
+
+function spnetsync_get_civi_phone_types() {
+  set_time_limit(0);
+  $civiapi     = spciviapi_get_api();
+  $fields = array();
+  $civiapi->Phone->Getoptions(array(
+    'sequential' => 1,
+    'option.limit' => 9999,
+    'field' => "phone_type_id",
+  ));
+  $civi_types_results = $civiapi->result();
+  if (isset($civi_types_results->values)) {
+    foreach($civi_types_results->values as $value) {
+      $results[$value->key] = $value->value;
+    }
+    return $results;
+  }
+  return FALSE;
+}
+
+function spnetsync_get_civi_address_locations() {
+  set_time_limit(0);
+  $civiapi     = spciviapi_get_api();
+  $fields = array();
+  $civiapi->Address->Getoptions(array(
+    'sequential' => 1,
+    'option.limit' => 9999,
+    'field'          => 'location_type',
+  ));
+  $civi_locations_results = $civiapi->result();
+  if (isset($civi_locations_results->values)) {
+    foreach($civi_locations_results->values as $value) {
+      $results[$value->key] = $value->value;
+    }
+    return $results;
+  }
+  return FALSE;
+}
+
+function spnetsync_get_civi_address_fields() {
+  set_time_limit(0);
+  $civiapi     = spciviapi_get_api();
+  $fields = array();
+  $civiapi->Address->getfields(array(
+    'sequential' => 1,
+    'option.limit' => 9999,
+  ));
+  $civi_fields_results = $civiapi->result();
+  if (isset($civi_fields_results->values)) {
+    foreach ($civi_fields_results->values as $value) {
+      if (isset($value->title) && isset($value->name)) {
+        $results[$value->name] = $value->title;
+      }
+      elseif (isset($value->label) && isset($value->groupTitle) && isset($value->name)) {
+        $results[$value->name] = $value->groupTitle . ': ' . $value->label;
+      }
+    }
+    return $results;
+    //foreach($civi_fields_results->values as $value) {
+    //  $results[$value->key] = $value->value;
+    //}
+    //return $results;
+    return array('a' => 'b');
+  }
+  return FALSE;
+}
