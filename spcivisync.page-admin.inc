@@ -1,8 +1,8 @@
 <?php
 
-function spnetsync_admin_add_relation_role_rules($form, &$form_state) {
+function spcivisync_admin_add_relation_role_rules($form, &$form_state) {
   $form = array();
-  $relations = spnetsync_get_civi_relationships();
+  $relations = spcivisync_get_civi_relationships();
   $form['relations'] = array(
     '#type' => 'fieldset', 
     '#title' => 'CiviCRM relaties -> Drupal rollen',
@@ -14,7 +14,7 @@ function spnetsync_admin_add_relation_role_rules($form, &$form_state) {
     '#multiple' => TRUE,
     '#required' => TRUE,
   );
-  $roles = spnetsync_roles();
+  $roles = spcivisync_roles();
   $form['relations']['drupal_roles'] = array(
     '#type' => 'select',
     '#title' => 'Drupal rol(len)',
@@ -26,14 +26,14 @@ function spnetsync_admin_add_relation_role_rules($form, &$form_state) {
   $form['relations']['submit'] = array(
     '#type'  => 'submit',
     '#value' => 'Voeg toe',
-    '#submit' => array('spnetsync_admin_add_relation_role_rules_submit'),
+    '#submit' => array('spcivisync_admin_add_relation_role_rules_submit'),
   );
 
   return $form;
 }
 
-function spnetsync_admin_add_relation_role_rules_submit($form, &$form_state) {
-  //variable_set('spnetsync_rules', array());
+function spcivisync_admin_add_relation_role_rules_submit($form, &$form_state) {
+  //variable_set('spcivisync_rules', array());
   $values = $form_state['values'];
   // Create values to store.
   foreach ($values['civi_relations'] as $value) {
@@ -43,7 +43,7 @@ function spnetsync_admin_add_relation_role_rules_submit($form, &$form_state) {
     $drupal_roles[$value] = $form['relations']['drupal_roles']['#options'][$value];
   }
   // Store values.
-  $rules = variable_get('spnetsync_rules', array());
+  $rules = variable_get('spcivisync_rules', array());
   $new_rules = $rules;
   $new_rules['relations-roles'][] = array(
     'civi_relations' => $civi_relations,
@@ -65,11 +65,11 @@ function spnetsync_admin_add_relation_role_rules_submit($form, &$form_state) {
     }
   }
   // Nieuwe regel.
-  variable_set('spnetsync_rules', $new_rules);
+  variable_set('spcivisync_rules', $new_rules);
   drupal_set_message('Regel is opgeslagen.');
 }
 
-function spnetsync_admin_add_field_field_rules($form, &$form_state) {
+function spcivisync_admin_add_field_field_rules($form, &$form_state) {
   $form = array();
   $form['fields'] = array(
     '#type' => 'fieldset', 
@@ -80,67 +80,57 @@ function spnetsync_admin_add_field_field_rules($form, &$form_state) {
     '#prefix' => '<h4>Synchronizeer eenvoudig Civi contact veld</h4>',
   );
 
-  $civi_fields = spnetsync_get_civi_contact_fields();
+  $civi_fields = spcivisync_get_civi_contact_fields();
+  array_unshift($civi_fields, 'Selecteer Civi veld:');
   $form['fields']['civi_contact_simple_fields']['civi_contact_simple_fields'] = array(
     '#type' => 'select',
     '#options' => $civi_fields,
-    '#multiple' => TRUE,
-    '#required' => TRUE,
   );
 
   $form['fields']['civi_contact_email_fields'] = array(
     '#type' => 'fieldset', 
     '#prefix' => '<h4>of Civi contact email veld</h4>',
   );
-  $civi_email_location_fields = spnetsync_get_civi_email_locations();
+  $civi_email_location_fields = spcivisync_get_civi_email_locations();
+  array_unshift($civi_email_location_fields, 'Selecteer locatie:');
   $form['fields']['civi_contact_email_fields']['civi_contact_email_location_field'] = array(
     '#type' => 'select',
-    '#title' => 'Selecteer type',
     '#options' => $civi_email_location_fields,
-    '#multiple' => TRUE,
-    '#required' => TRUE,
   );
 
   $form['fields']['civi_contact_phone_fields'] = array(
     '#type' => 'fieldset', 
     '#prefix' => '<h4>of Civi contact telefoon veld</h4>',
   );
-  $civi_phone_location_fields = spnetsync_get_civi_phone_locations();
+  $civi_phone_location_fields = spcivisync_get_civi_phone_locations();
+  array_unshift($civi_phone_location_fields, 'Selecteer locatie:');
   $form['fields']['civi_contact_phone_fields']['civi_contact_phone_location_field'] = array(
     '#type' => 'select',
-    '#title' => 'Selecteer locatie',
     '#options' => $civi_phone_location_fields,
-    '#multiple' => TRUE,
-    '#required' => TRUE,
   );
-  $civi_phone_type_fields = spnetsync_get_civi_phone_types();
+  $civi_phone_type_fields = spcivisync_get_civi_phone_types();
+  array_unshift($civi_phone_type_fields, 'Selecteer type:');
   $form['fields']['civi_contact_phone_fields']['civi_contact_phone_type_field'] = array(
     '#type' => 'select',
-    '#title' => 'Selecteer type',
     '#options' => $civi_phone_type_fields,
-    '#multiple' => TRUE,
-    '#required' => TRUE,
   );
 
   $form['fields']['civi_contact_address_fields'] = array(
     '#type' => 'fieldset', 
     '#prefix' => '<h4>of Civi contact adres veld</h4>',
   );
-  $civi_address_location_fields = spnetsync_get_civi_address_locations();
+  $civi_address_location_fields = spcivisync_get_civi_address_locations();
+  array_unshift($civi_address_location_fields, 'Selecteer type:');
   $form['fields']['civi_contact_address_fields']['civi_contact_address_location_field'] = array(
     '#type' => 'select',
     '#title' => 'Selecteer type',
     '#options' => $civi_address_location_fields,
-    '#multiple' => TRUE,
-    '#required' => TRUE,
   );
-  $civi_address_fields = spnetsync_get_civi_address_fields();
+  $civi_address_fields = spcivisync_get_civi_address_fields();
+  array_unshift($civi_address_fields, 'Selecteer adres veld:');
   $form['fields']['civi_contact_address_fields']['civi_contact_address_field'] = array(
     '#type' => 'select',
-    '#title' => 'Selecteer adres veld',
     '#options' => $civi_address_fields,
-    '#multiple' => TRUE,
-    '#required' => TRUE,
   );
 
   $drupal_fields = array(1 => 'TEST', 2 => 'TEST2');
@@ -148,21 +138,19 @@ function spnetsync_admin_add_field_field_rules($form, &$form_state) {
     '#type' => 'select',
     '#prefix' => '<h4>met Drupal account veld</h4>',
     '#options' => $drupal_fields,
-    '#multiple' => TRUE,
-    '#required' => TRUE,
   );
 
   $form['fields']['submit'] = array(
     '#type'  => 'submit',
     '#value' => 'Voeg toe',
-    '#submit' => array('spnetsync_admin_add_field_field_rules_submit'),
+    '#submit' => array('spcivisync_admin_add_field_field_rules_submit'),
   );
 
   return $form;
 }
 
-function spnetsync_admin_add_field_field_rules_submit($form, &$form_state) {
-  //variable_set('spnetsync_rules', array());
+function spcivisync_admin_add_field_field_rules_submit($form, &$form_state) {
+  //variable_set('spcivisync_rules', array());
   $values = $form_state['values'];
   // Create values to store.
   foreach ($values['civi_fields'] as $value) {
@@ -172,7 +160,7 @@ function spnetsync_admin_add_field_field_rules_submit($form, &$form_state) {
     $drupal_fields[$value] = $form['fields']['drupal_fields']['#options'][$value];
   }
   // Store values.
-  $rules = variable_get('spnetsync_rules', array());
+  $rules = variable_get('spcivisync_rules', array());
   $new_rules = $rules;
   $new_rules['fields-fields'][] = array(
     'civi_fields' => $civi_fields,
@@ -194,12 +182,12 @@ function spnetsync_admin_add_field_field_rules_submit($form, &$form_state) {
     }
   }
   // Nieuwe regel.
-  variable_set('spnetsync_rules', $new_rules);
+  variable_set('spcivisync_rules', $new_rules);
   drupal_set_message('Regel is opgeslagen.');
 }
 
-function spnetsync_admin_list_rules() {
-  $rules = variable_get('spnetsync_rules');
+function spcivisync_admin_list_rules() {
+  $rules = variable_get('spcivisync_rules');
   $output = '';
   // Relation - role rules.
   if (!empty($rules['relations-roles'])) {
@@ -213,7 +201,7 @@ function spnetsync_admin_list_rules() {
       foreach ($rule['drupal_roles'] as $id => $title) {
         $output .= $title . '<br/>';
       }
-      $output .= '</td><td><a href="/admin/config/sp/spnetsync/delete/relations-roles/' . $rule_id . '">' . t('Delete') . '</a></td></tr>';
+      $output .= '</td><td><a href="/admin/config/sp/spcivisync/delete/relations-roles/' . $rule_id . '">' . t('Delete') . '</a></td></tr>';
     }
     $output .= '</table>';
   }
@@ -240,13 +228,13 @@ function spnetsync_admin_list_rules() {
   return $output;
 }
 
-function spnetsync_delete($type, $rule_id) {
-  $rules = variable_get('spnetsync_rules');
+function spcivisync_delete($type, $rule_id) {
+  $rules = variable_get('spcivisync_rules');
   switch ($type) {
   case 'relations-roles':
     if (!empty($rules['relations-roles'][$rule_id])) {
       unset($rules['relations-roles'][$rule_id]);
-      variable_set('spnetsync_rules', $rules);
+      variable_set('spcivisync_rules', $rules);
       drupal_set_message('Rule was deleted.');
     }
     else {
@@ -256,5 +244,5 @@ function spnetsync_delete($type, $rule_id) {
   case 'field-field':
     break;
   }
-  drupal_goto('/admin/config/sp/spnetsync');
+  drupal_goto('/admin/config/sp/spcivisync');
 }

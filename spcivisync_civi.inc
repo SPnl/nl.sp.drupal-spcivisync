@@ -1,12 +1,12 @@
 <?php
 
-function spnetsync_sync() {
+function spcivisync_sync() {
 
   set_time_limit(0);
 
   $civiapi     = spciviapi_get_api();
 
-  _spnetsync_output_start('Sync: ');
+  _spcivisync_output_start('Sync: ');
 
   // Get tags and custom field id
   $civiapi->Tag->Getsingle(array(
@@ -53,7 +53,7 @@ function spnetsync_sync() {
   return '';
 }
 
-function _spnetsync_output_text($text) {
+function _spcivisync_output_text($text) {
   if (function_exists('drush_print'))
     drush_print($text);
   elseif (function_exists('dsm'))
@@ -61,19 +61,19 @@ function _spnetsync_output_text($text) {
     echo($text . "\n");
 }
 
-function _spnetsync_output_start($label) {
+function _spcivisync_output_start($label) {
   if (function_exists('drush_print'))
     drush_print($label . ' ', 0, null, false);
   else
     echo($label . ' ');
 }
 
-function _spnetsync_output_progress() {
+function _spcivisync_output_progress() {
   if (function_exists('drush_print'))
     drush_print('.', 0, null, false);
 }
 
-function _spnetsync_output_finish() {
+function _spcivisync_output_finish() {
   if (function_exists('drush_print'))
     drush_print('', 0, null, true);
 }

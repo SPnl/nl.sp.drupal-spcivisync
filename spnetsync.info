@@ -1,7 +1,0 @@
-name = SPNET sync
-description = Sync SPNET relations and fields with drupal roles and fields.
-version = 1.0
-core = 7.x
-package = sprbs
-dependencies[] = spciviapi
-dependencies[] = rules

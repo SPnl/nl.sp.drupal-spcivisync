@@ -9,10 +9,10 @@
  *
  * Provides an action sync civicrm data with local user. 
  */
-function spnetsync_rules_action_info() {
+function spcivisync_rules_action_info() {
   $actions = array();
 
-  $actions['spnetsync_sync_user'] = array(
+  $actions['spcivisync_sync_user'] = array(
     'label' => t('Sync local user data with civicrm data.'),
     'parameter' => array(
       'user' => array(
@@ -22,18 +22,11 @@ function spnetsync_rules_action_info() {
     ),
   );
 
-  $actions['spnetsync_sync_all_users'] = array(
+  $actions['spcivisync_sync_all_users'] = array(
     'label' => t('Sync all local users data with civicrm data.'),
   );
 
   return $actions;
 }
 
-function spnetsync_sync_user($user) {
-  spnetsync_sync_roles($user);
-}
-
-function spnetsync_sync_all_users() {
-  spnetsync_sync_roles();
-}
 

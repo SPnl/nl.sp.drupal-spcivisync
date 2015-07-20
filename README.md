@@ -1,4 +1,4 @@
-spnetsync
+spcivisync
 ======================
 
 Deze module haalt gebruikersgegevens uit CiviCRM op, 
