@@ -8,12 +8,12 @@ function spcivisync_menu() {
 
   $items = array();
 
-  $items['admin/config/sp/spcivisync-run'] = array(
+  $items['admin/config/sp/spcivisync/sync/%'] = array(
     'title'            => 'SP CiviCRM synchronizatie uitvoeren',
     'type'             => MENU_CALLBACK,
     'page callback'    => 'spcivisync_sync',
+    'page arguments'   => array(5),
     'access arguments' => array('access administration pages'),
-    'file'             => 'spcivisync_civi.inc',
   );
 
   $items['admin/config/sp/spcivisync'] = array(
@@ -45,9 +45,28 @@ function spcivisync_menu() {
   $items['admin/config/sp/spcivisync/add-field-field-rule'] = array(
     'title'            => 'Veld - veld',
     'type'             => MENU_LOCAL_TASK,
-    'weight'           => 1,
+    'weight'           => 2,
     'page callback'    => 'drupal_get_form',
     'page arguments'   => array('spcivisync_admin_add_field_field_rules'),
+    'file'             => 'spcivisync.page-admin.inc',
+    'access callback' => sprbs_access_check(),
+  );
+
+  $items['admin/config/sp/spcivisync/test-rule'] = array(
+    'title'            => 'Test regels',
+    'type'             => MENU_LOCAL_TASK,
+    'weight'           => 3,
+    'page callback'    => 'drupal_get_form',
+    'page arguments'   => array('spcivisync_admin_test_rules'),
+    'file'             => 'spcivisync.page-admin.inc',
+    'access callback' => sprbs_access_check(),
+  );
+
+  $items['admin/config/sp/spcivisync/sync'] = array(
+    'title'            => 'Sync',
+    'type'             => MENU_LOCAL_TASK,
+    'weight'           => 4,
+    'page callback'    => 'spcivisync_admin_sync',
     'file'             => 'spcivisync.page-admin.inc',
     'access callback' => sprbs_access_check(),
   );
@@ -62,146 +81,155 @@ function spcivisync_menu() {
   return $items;
 }
 
-function spcivisync_sync_user($user) {
-  spcivisync_sync_roles($user);
-}
-
-function spcivisync_sync_all_users() {
-  spcivisync_sync_roles();
-}
-
-function spcivisync_get_civi_relationships() {
-  set_time_limit(0);
-  $civiapi     = spciviapi_get_api();
-  $relationships = array();
-
-  $civiapi->RelationshipType->Get(array(
-    'option.limit'          => 9999,
-  ));
-  $relationships_results = $civiapi->result();
-  if (isset($relationships_results->values)) {
-    foreach ($relationships_results->values as $value) {
-      $relationships[$value->id] = $value->label_a_b . ' / ' . $value->label_b_a;
+function spcivisync_sync($user_id) {
+  // Check if all users should be synced.
+  if (empty($user_id) || $user_id == 'all') {
+    spcivisync_sync_all_users();
+  }
+  else {
+    // Sync single user.
+    if (filter_var($user_id, FILTER_VALIDATE_INT)) {
+      $drupal_users = spcivisync_get_users();
+      if (!empty($drupal_users[$user_id])) {
+        spcivisync_sync_user($drupal_users[$user_id]);
+      }
     }
-    variable_set('spcivisync_relationships', $relationships);
-    return $relationships;
+  }
+  drupal_goto('admin/config/sp/spcivisync/sync');
+}
+
+function spcivisync_sync_user($user, $test = FALSE) {
+  spcivisync_sync_roles($user, $test);
+  spcivisync_sync_fields($user, $test);
+}
+
+function spcivisync_sync_all_users($test = FALSE) {
+  spcivisync_sync_roles(FALSE, $test);
+  spcivisync_sync_fields(FALSE, $test);
+}
+
+function spcivisync_get_civi_relationships($sync = TRUE) {
+  if ($sync) {
+    set_time_limit(0);
+    $civiapi     = spciviapi_get_api();
+    $relationships = array();
+
+    $civiapi->RelationshipType->Get(array(
+      'option.limit'          => 9999,
+    ));
+    $relationships_results = $civiapi->result();
+    if (isset($relationships_results->values)) {
+      foreach ($relationships_results->values as $value) {
+        $relationships[$value->id] = $value->label_a_b . ' / ' . $value->label_b_a;
+      }
+      variable_set('spcivisync_relationships', $relationships);
+      return $relationships;
+    }
+    else {
+      drupal_set_message('Error syncing civicrm relationship types, using saved data.', 'warning');
+    }
   }
   $relationships = variable_get('spcivisync_relationships', 'FALSE');
-  drupal_set_message('Error syncing civicrm relationship types, using saved data.', 'warning');
   return $relationships;
 }
 
-function spcivisync_get_civi_fields() {
-  set_time_limit(0);
-  $civiapi     = spciviapi_get_api();
-  $fields = array();
-
-  $civiapi->UFField->Get(array(
-    'option.limit'          => 9999,
-    'uf_group_id'           => 7,
-    'field_name' => 'email',
-  ));
-  $fields_results = $civiapi->result();
-  if (isset($field_results->values)) {
-    foreach ($fields_results->values as $value) {
-      $fields[$value->id] = $value->label . ' | ' . $value->field_name;
-    }
-    variable_set('spcivisync_fields', $fields);
-    return $fields;
-  }
-  $fields = variable_get('spcivisync_fields', 'FALSE');
-  drupal_set_message('Error syncing civicrm fields, using saved data.', 'warning');
-  return $fields;
-}
-
-function spcivisync_sync_roles($user = FALSE) {
+function spcivisync_sync_roles($user = FALSE, $test = FALSE) {
   // Settings and variables.
-  $admin_rid = user_role_load_by_name('administrator')->rid;
-  $sync_roles = spcivisync_roles();
+  $sync_roles = spcivisync_get_roles();
   $rules = variable_get('spcivisync_rules');
 
-  // Create relation-role and role-relation sync tables from rules.
-  foreach ($rules['relations-roles'] as $rule) {
-    foreach ($rule['drupal_roles'] as $role_id => $role_name) {
-      foreach ($rule['civi_relations'] as $relation_id => $relation_name) {
-        $relation_role_sync_table[$relation_id][$role_id] = $role_name;
-        $role_relation_sync_table[$role_id][$relation_id] = $relation_name;
+  if (!empty($rules['relations-roles'])) {
+
+    if ($test) {
+      drupal_set_message('<strong>Synchronizatie CiviCRM relaties met Drupal rollen.</strong>');
+    }
+
+    // Create relation-role and role-relation sync tables from rules.
+    foreach ($rules['relations-roles'] as $rule_id => $rule) {
+      if ($test) {
+        drupal_set_message('Relatie rol regel id. ' . $rule_id);
+      }
+      foreach ($rule['drupal_roles'] as $role_id => $role_name) {
+        foreach ($rule['civi_relations'] as $relation_id => $relation_name) {
+          $relation_role_sync_table[$relation_id][$role_id] = $role_name;
+          $role_relation_sync_table[$role_id][$relation_id] = $relation_name;
+        }
       }
     }
-  }
 
-  // Get user(s).
-  if ($user) {
-    $drupal_users = entity_load('user', array($user->uid));
-  }
-  else {
-    $drupal_users = entity_load('user');
-  }
-  // Remove anonymous user.
-  unset($drupal_users[0]);
+    $drupal_users = spcivisync_get_users($user);
 
-  // Process relations and roles for each user.
-  foreach ($drupal_users as $drupal_user) {
-    // Do not sync admin users.
-    if (isset($drupal_user->roles[$admin_rid])) {
-      continue;
-    }
-    // Get civi user relations.
-    $civi_relationships = spcivisync_get_civi_relations($drupal_user);
-    if ($civi_relationships !== FALSE) {
-      // Check if civicrm relationships need to be synced with roles.
-      foreach ($role_relation_sync_table as $role_id => $role_relations) {
-        $role_set = FALSE;
-        foreach ($role_relations as $role_relation_id => $role_relation_name) {
-          foreach ($civi_relationships as $civi_relationship) {
-            // Check relation start and end date.
-            if (spcivisync_check_date($civi_relationship)) {
-              // check if rule role relation id equals civi relation id.
-              if ($civi_relationship->relationship_type_id == $role_relation_id) {
-                spcivisync_set_role($drupal_user, $role_id);
-                $role_set = TRUE;
-                break 2;
+    // Process relations and roles for each user.
+    foreach ($drupal_users as $drupal_user) {
+      // Get civi user relations.
+      $civi_relationships = spcivisync_get_civi_relations($drupal_user);
+      if ($civi_relationships !== FALSE) {
+        // Check if civicrm relationships need to be synced with roles.
+        foreach ($role_relation_sync_table as $role_id => $role_relations) {
+          $role_set = FALSE;
+          foreach ($role_relations as $role_relation_id => $role_relation_name) {
+            foreach ($civi_relationships as $civi_relationship) {
+              // Check relation start and end date.
+              if (spcivisync_check_date($civi_relationship)) {
+                // check if rule role relation id equals civi relation id.
+                if ($civi_relationship->relationship_type_id == $role_relation_id) {
+                  spcivisync_set_role($drupal_user, $role_id, $test);
+                  $role_set = TRUE;
+                  break 2;
+                }
               }
             }
           }
-        }
-        if ($role_set == FALSE) {
-          spcivisync_unset_role($drupal_user, $role_id);
+          if ($role_set == FALSE) {
+            spcivisync_unset_role($drupal_user, $role_id, $test);
+          }
         }
       }
     }
   }
 }
 
-function spcivisync_roles() {
+function spcivisync_get_roles() {
   $sync_roles = user_roles(TRUE);
   unset($sync_roles[user_role_load_by_name('administrator')->rid]);
   return $sync_roles;
 }
 
-function spcivisync_set_role($user, $role_id) {
-  $sync_roles = spcivisync_roles();
+function spcivisync_set_role($user, $role_id, $test = FALSE) {
+  $sync_roles = spcivisync_get_roles();
   // Set user role.
   if (empty($user->roles[$role_id])) {
     $user_roles = $user->roles;
     $user_roles[$role_id] = $sync_roles[$role_id];
     $user->roles = $user_roles;
-    user_save($user);
-    drupal_set_message('User ' . $user->name . ' role set: ' . $sync_roles[$role_id]);
-    watchdog('spcivisync', 'User ' . $user->name . ' role set: ' . $sync_roles[$role_id]);
+    if ($test) {
+      drupal_set_message('Gebruiker: ' . $user->name . '<br/>Rol: ' . $sync_roles[$role_id]);
+    }
+    else {
+      user_save($user);
+    }
+  }
+  elseif ($test) {
+    drupal_set_message('Rol: ' .  $sync_roles[$role_id] . ' reeds ingesteld.');
   }
 }
 
-function spcivisync_unset_role($user, $role_id) {
-  $sync_roles = spcivisync_roles();
+function spcivisync_unset_role($user, $role_id, $test = FALSE) {
+  $sync_roles = spcivisync_get_roles();
   // Unset user role.
   if (!empty($user->roles[$role_id])) {
     $user_roles = $user->roles;
     unset($user_roles[$role_id]);
     $user->roles = $user_roles;
-    user_save($user);
-    drupal_set_message('User ' . $user->name . ' role removed: ' . $sync_roles[$role_id]);
-    watchdog('spcivisync', 'User ' . $user->name . ' role removed: ' . $sync_roles[$role_id]);
+    if ($test) {
+      drupal_set_message('User ' . $user->name . ' role removed: ' . $sync_roles[$role_id]);
+    }
+    else {
+      user_save($user);
+    }
+  }
+  elseif ($test) {
+    drupal_set_message('Rol: ' .  $sync_roles[$role_id] . ' reeds afwezig.');
   }
 }
 
@@ -242,142 +270,400 @@ function spcivisync_check_date($civi_relationship) {
   return FALSE;
 }
 
-function spcivisync_get_civi_contact_fields() {
-  set_time_limit(0);
-  $civiapi     = spciviapi_get_api();
-  $fields = array();
-  $civiapi->Contact->Getfields(array(
-    'sequential' => 1,
-    'option.limit' => 9999,
-  ));
-  $civi_fields_results = $civiapi->result();
-  if (isset($civi_fields_results->values)) {
-    foreach ($civi_fields_results->values as $value) {
-      if (isset($value->title) && isset($value->name)) {
-        $results[$value->name] = $value->title;
+function spcivisync_get_civi_contact_fields($sync = TRUE) {
+  if ($sync) {
+    set_time_limit(0);
+    $civiapi     = spciviapi_get_api();
+    $fields = array();
+    $civiapi->Contact->Getfields(array(
+      'sequential' => 1,
+      'option.limit' => 9999,
+    ));
+    $civi_fields_results = $civiapi->result();
+    if (isset($civi_fields_results->values)) {
+      foreach ($civi_fields_results->values as $value) {
+        if (isset($value->title) && isset($value->name)) {
+          $results[$value->name] = $value->title;
+        }
+        elseif (isset($value->label) && isset($value->groupTitle) && isset($value->name)) {
+          $results[$value->name . ':group:'] = $value->groupTitle . ': ' . $value->label;
+        }
       }
-      elseif (isset($value->label) && isset($value->groupTitle) && isset($value->name)) {
-        $results[$value->name] = $value->groupTitle . ': ' . $value->label;
-      }
+      variable_set('spcivisync_contact_fields', $results);
+      return $results;
     }
-    variable_set('spcivisync_contact_fields', $results);
-    return $results;
+    else {
+      drupal_set_message('Error syncing civicrm contact fields, using saved data.', 'warning');
+    }
   }
   $results = variable_get('spcivisync_contact_fields', 'FALSE');
-  drupal_set_message('Error syncing civicrm contact fields, using saved data.', 'warning');
   return $results;
 }
 
-function spcivisync_get_civi_email_locations() {
-  set_time_limit(0);
-  $civiapi     = spciviapi_get_api();
-  $fields = array();
-  $civiapi->Email->Getoptions(array(
-    'sequential' => 1,
-    'option.limit' => 9999,
-    'field'          => 'location_type',
-  ));
-  $civi_locations_results = $civiapi->result();
-  if (isset($civi_locations_results->values)) {
-    foreach($civi_locations_results->values as $value) {
-      $results[$value->key] = $value->value;
+function spcivisync_get_civi_email_locations($sync = TRUE) {
+  if ($sync) {
+    set_time_limit(0);
+    $civiapi     = spciviapi_get_api();
+    $fields = array();
+    $civiapi->Email->Getoptions(array(
+      'sequential' => 1,
+      'option.limit' => 9999,
+      'field'          => 'location_type',
+    ));
+    $civi_locations_results = $civiapi->result();
+    if (isset($civi_locations_results->values)) {
+      foreach($civi_locations_results->values as $value) {
+        $results[$value->key] = $value->value;
+      }
+      variable_set('spcivisync_email_locations', $results);
+      return $results;
     }
-    variable_set('spcivisync_email_locations', $results);
-    return $results;
+    else {
+      drupal_set_message('Error syncing civicrm email locations, using saved data.', 'warning');
+    }
   }
   $results = variable_get('spcivisync_email_locations', 'FALSE');
-  drupal_set_message('Error syncing civicrm email locations, using saved data.', 'warning');
   return $results;
 }
 
-function spcivisync_get_civi_phone_locations() {
-  set_time_limit(0);
-  $civiapi     = spciviapi_get_api();
-  $fields = array();
-  $civiapi->Email->Getoptions(array(
-    'sequential' => 1,
-    'option.limit' => 9999,
-    'field'          => 'location_type',
-  ));
-  $civi_locations_results = $civiapi->result();
-  if (isset($civi_locations_results->values)) {
-    foreach($civi_locations_results->values as $value) {
-      $results[$value->key] = $value->value;
+function spcivisync_get_civi_phone_locations($sync = TRUE) {
+  if ($sync) {
+    set_time_limit(0);
+    $civiapi     = spciviapi_get_api();
+    $fields = array();
+    $civiapi->Email->Getoptions(array(
+      'sequential' => 1,
+      'option.limit' => 9999,
+      'field'          => 'location_type',
+    ));
+    $civi_locations_results = $civiapi->result();
+    if (isset($civi_locations_results->values)) {
+      foreach($civi_locations_results->values as $value) {
+        $results[$value->key] = $value->value;
+      }
+      variable_set('spcivisync_phone_locations', $results);
+      return $results;
     }
-    variable_set('spcivisync_phone_locations', $results);
-    return $results;
+    else {
+      drupal_set_message('Error syncing civicrm phone locations, using saved data.', 'warning');
+    }
   }
   $results = variable_get('spcivisync_phone_locations', 'FALSE');
-  drupal_set_message('Error syncing civicrm phone locations, using saved data.', 'warning');
   return $results;
 }
 
-function spcivisync_get_civi_phone_types() {
-  set_time_limit(0);
-  $civiapi     = spciviapi_get_api();
-  $fields = array();
-  $civiapi->Phone->Getoptions(array(
-    'sequential' => 1,
-    'option.limit' => 9999,
-    'field' => "phone_type_id",
-  ));
-  $civi_types_results = $civiapi->result();
-  if (isset($civi_types_results->values)) {
-    foreach($civi_types_results->values as $value) {
-      $results[$value->key] = $value->value;
+function spcivisync_get_civi_phone_types($sync = TRUE) {
+  if ($sync) {
+    set_time_limit(0);
+    $civiapi     = spciviapi_get_api();
+    $fields = array();
+    $civiapi->Phone->Getoptions(array(
+      'sequential' => 1,
+      'option.limit' => 9999,
+      'field' => "phone_type_id",
+    ));
+    $civi_types_results = $civiapi->result();
+    if (isset($civi_types_results->values)) {
+      foreach($civi_types_results->values as $value) {
+        $results[$value->key] = $value->value;
+      }
+      variable_set('spcivisync_phone_types', $results);
+      return $results;
     }
-    variable_set('spcivisync_phone_types', $results);
-    return $results;
+    else {
+      drupal_set_message('Error syncing civicrm phone types, using saved data.', 'warning');
+    }
   }
   $results = variable_get('spcivisync_phone_types', 'FALSE');
-  drupal_set_message('Error syncing civicrm phone types, using saved data.', 'warning');
   return $results;
 }
 
-function spcivisync_get_civi_address_locations() {
-  set_time_limit(0);
-  $civiapi     = spciviapi_get_api();
-  $fields = array();
-  $civiapi->Address->Getoptions(array(
-    'sequential' => 1,
-    'option.limit' => 9999,
-    'field'          => 'location_type',
-  ));
-  $civi_locations_results = $civiapi->result();
-  if (isset($civi_locations_results->values)) {
-    foreach($civi_locations_results->values as $value) {
-      $results[$value->key] = $value->value;
+function spcivisync_get_civi_address_locations($sync = TRUE) {
+  if ($sync) {
+    set_time_limit(0);
+    $civiapi     = spciviapi_get_api();
+    $fields = array();
+    $civiapi->Address->Getoptions(array(
+      'sequential' => 1,
+      'option.limit' => 9999,
+      'field'          => 'location_type',
+    ));
+    $civi_locations_results = $civiapi->result();
+    if (isset($civi_locations_results->values)) {
+      foreach($civi_locations_results->values as $value) {
+        $results[$value->key] = $value->value;
+      }
+      variable_set('spcivisync_address_locations', $results);
+      return $results;
     }
-    variable_set('spcivisync_address_locations', $results);
-    return $results;
+    else {
+      drupal_set_message('Error syncing civicrm address locations, using saved data.', 'warning');
+    }
   }
   $results = variable_get('spcivisync_address_locations', 'FALSE');
-  drupal_set_message('Error syncing civicrm address locations, using saved data.', 'warning');
   return $results;
 }
 
-function spcivisync_get_civi_address_fields() {
-  set_time_limit(0);
-  $civiapi     = spciviapi_get_api();
-  $fields = array();
-  $civiapi->Address->getfields(array(
-    'sequential' => 1,
-    'option.limit' => 9999,
-  ));
-  $civi_fields_results = $civiapi->result();
-  if (isset($civi_fields_results->values)) {
-    foreach ($civi_fields_results->values as $value) {
-      if (isset($value->title) && isset($value->name)) {
-        $results[$value->name] = $value->title;
+function spcivisync_get_civi_address_fields($sync = TRUE) {
+  if ($sync) {
+    set_time_limit(0);
+    $civiapi     = spciviapi_get_api();
+    $fields = array();
+    $civiapi->Address->getfields(array(
+      'sequential' => 1,
+      'option.limit' => 9999,
+    ));
+    $civi_fields_results = $civiapi->result();
+    if (isset($civi_fields_results->values)) {
+      foreach ($civi_fields_results->values as $value) {
+        if (isset($value->title) && isset($value->name)) {
+          $results[$value->name] = $value->title;
+        }
+        elseif (isset($value->label) && isset($value->groupTitle) && isset($value->name)) {
+          $results[$value->name] = $value->groupTitle . ': ' . $value->label;
+        }
       }
-      elseif (isset($value->label) && isset($value->groupTitle) && isset($value->name)) {
-        $results[$value->name] = $value->groupTitle . ': ' . $value->label;
-      }
+      variable_set('spcivisync_address_fields', $results);
+      return $results;
     }
-    variable_set('spcivisync_address_fields', $results);
-    return $results;
+    else {
+      drupal_set_message('Error syncing civicrm address fields, using saved data.', 'warning');
+    }
   }
   $results = variable_get('spcivisync_address_fields', 'FALSE');
-  drupal_set_message('Error syncing civicrm address fields, using saved data.', 'warning');
   return $results;
+}
+
+function spcivisync_get_account_fields() {
+  $instances = field_info_instances('user', 'user');
+  foreach ($instances as $instance) {
+    $results[$instance['field_name']] = $instance['label'];
+  }
+  return $results;
+}
+
+function spcivisync_sync_fields($user = FALSE, $test = FALSE) {
+  // Settings and variables.
+  $rules = variable_get('spcivisync_rules');
+  $users = spcivisync_get_users($user);
+
+  // Sync fields.
+  if (!empty($rules['field-field'])) {
+    if ($test) {
+      drupal_set_message('<strong>Synchronizatie CiviCRM velden met Drupal velden.</strong>');
+    }
+
+    foreach ($rules['field-field'] as $rule) {
+      if (!empty($rule['simple'])) {
+        spcivisync_sync_simple_field($users, $rule['simple'], $test);
+      }
+      elseif (!empty($rule['email'])) {
+        spcivisync_sync_email_field($users, $rule['email'], $test);
+      }
+      elseif (!empty($rule['phone'])) {
+        spcivisync_sync_phone_field($users, $rule['phone'], $test);
+      }
+      elseif (!empty($rule['address'])) {
+        spcivisync_sync_address_field($users, $rule['address'], $test);
+      }
+    }
+  }
+  return;
+}
+
+function spcivisync_sync_simple_field($users, $rule, $test = FALSE) {
+  $simple_field = $rule['simple_field'];
+  $drupal_field = $rule['drupal_field'];
+  set_time_limit(0);
+
+  // Connect to civiapi.
+  $civiapi     = spciviapi_get_api();
+
+  foreach ($users as $user) {
+    // Get civicrm relationships for user.
+    // Check if it is a group field, and if so, get the group name instead of the id.
+    if (strpos($simple_field, ':group:')) {
+      // Set display name.
+      $simple_field = substr_replace($simple_field, '', strpos($simple_field, ':group:'));
+      $civiapi->Contact->Get(array(
+        'sequential' => 1,
+        'return' => $simple_field,
+        'id' => $user->name,
+      ));
+      $results = $civiapi->result();
+      if (isset($results->values)) {
+        $id = $results->values[0]->$simple_field;
+      }
+      // Get display name.
+      $civiapi->Contact->Get(array(
+        'sequential' => 1,
+        'return' => 'display_name',
+        'id' => $id,
+      ));
+      $results = $civiapi->result();
+      if (isset($results->values)) {
+        $value = $results->values[0]->display_name;
+        spcivisync_set_account_field_value($user, $drupal_field, $value, $test);
+      }
+    }
+    else {
+      // Set plain field value.
+      $civiapi->Contact->Get(array(
+        'sequential' => 1,
+        'return' => $simple_field,
+        'id' => $user->name,
+      ));
+      $results = $civiapi->result();
+      if (isset($results->values[0]->$simple_field)) {
+        $value = $results->values[0]->$simple_field;
+        spcivisync_set_account_field_value($user, $drupal_field, $value, $test);
+      }
+    }
+  }
+}
+
+function spcivisync_sync_email_field($users, $rule, $test = FALSE) {
+  $email_location_field = $rule['email_location_field'];
+  $drupal_field = $rule['drupal_field'];
+  set_time_limit(0);
+
+  // Connect to civiapi.
+  $civiapi     = spciviapi_get_api();
+
+  foreach ($users as $user) {
+    // Set plain field value.
+    $civiapi->Email->Get(array(
+      'sequential' => 1,
+      'return' => 'email',
+      'location_type_id' => $email_location_field,
+      'contact_id' => $user->name,
+    ));
+    $results = $civiapi->result();
+    if (isset($results->values[0]->email)) {
+      $value = $results->values[0]->email;
+      spcivisync_set_account_field_value($user, $drupal_field, $value, $test);
+    }
+  }
+}
+
+function spcivisync_sync_phone_field($users, $rule, $test = FALSE) {
+  $drupal_field = $rule['drupal_field'];
+  $phone_location_field = $rule['phone_location_field'];
+  $phone_type_field = $rule['phone_type_field'];
+  set_time_limit(0);
+
+  // Connect to civiapi.
+  $civiapi     = spciviapi_get_api();
+
+  foreach ($users as $user) {
+    // Set plain field value.
+    $civiapi->Phone->Get(array(
+      'sequential' => 1,
+      'return' => 'phone',
+      'location_type_id' => $phone_location_field,
+      'phone_type_id' => $phone_type_field,
+      'contact_id' => $user->name,
+    ));
+    $results = $civiapi->result();
+    if (isset($results->values[0]->phone)) {
+      $value = $results->values[0]->phone;
+      spcivisync_set_account_field_value($user, $drupal_field, $value, $test);
+    }
+  }
+}
+
+function spcivisync_sync_address_field($users, $rule, $test = FALSE) {
+  $drupal_field = $rule['drupal_field'];
+  $address_location_field = $rule['address_location_field'];
+  $address_field = $rule['address_field'];
+  set_time_limit(0);
+
+  // Connect to civiapi.
+  $civiapi     = spciviapi_get_api();
+
+  foreach ($users as $user) {
+    // Set plain field value.
+    $civiapi->Address->Get(array(
+      'sequential' => 1,
+      'return' => $address_field,
+      'location_type_id' => $address_location_field,
+      'contact_id' => $user->name,
+    ));
+    $results = $civiapi->result();
+    if (isset($results->values[0]->$address_field)) {
+      $value = $results->values[0]->$address_field;
+      spcivisync_set_account_field_value($user, $drupal_field, $value, $test);
+    }
+  }
+}
+
+function spcivisync_get_users($user = FALSE) {
+  $admin_rid = user_role_load_by_name('administrator')->rid;
+  // Get user(s).
+  if ($user) {
+    $users = entity_load('user', array($user->uid));
+  }
+  else {
+    $users = entity_load('user');
+  }
+  // Remove anonymous user.
+  unset($users[0]);
+
+  // Remove admin users;
+  foreach ($users as $id => $user) {
+    // Do not sync admin users.
+    if (isset($user->roles[$admin_rid])) {
+      unset($users[$id]);
+    }
+  }
+  return $users;
+}
+
+function spcivisync_set_account_field_value($user, $fieldname, $value, $test = FALSE) {
+  $user_wrapper = entity_metadata_wrapper('user', $user);
+  $info = $user_wrapper->$fieldname->info();
+  switch ($info['type']) {
+  case 'text':
+    $user_wrapper->$fieldname->set($value);
+    if (!$test) {
+      $user_wrapper->save();
+    }
+    else {
+      $drupal_fields = spcivisync_get_account_fields();
+      drupal_set_message('Veld: ' . $drupal_fields[$fieldname] . '<br/>Waarde: ' . $value);
+    }
+    break;
+  case 'integer':
+    if (filter_var($value, FILTER_VALIDATE_INT)) {
+      $user_wrapper->$fieldname->set($value);
+      if (!$test) {
+        $user_wrapper->save();
+      }
+      else {
+        $drupal_fields = spcivisync_get_account_fields();
+        drupal_set_message('Veld: ' . $drupal_fields[$fieldname] . '<br/>Waarde: ' . $value);
+      }
+    }
+    else {
+      drupal_set_message('Het is niet mogelijk om de waarde "' . $value . '" op te slaan in een integer veld.', 'error');
+    }
+    break;
+  case 'date':
+    if (strtotime($value)) {
+      $user_wrapper->$fieldname->set(strtotime($value));
+      if (!$test) {
+        $user_wrapper->save();
+      }
+      else {
+        $drupal_fields = spcivisync_get_account_fields();
+        drupal_set_message('Veld: ' . $drupal_fields[$fieldname] . '<br/>Waarde: ' . $value . ' omgezet naar ' . strtotime($value) . ' (timestamp)');
+      }
+    }
+    else {
+      drupal_set_message('Het is niet mogelijk om de waarde "' . $value . '" te converteren met strtotime() naar een timestamp.', 'error');
+    }
+    break;
+  default :
+      drupal_set_message('Helaas, het Drupal veldtype "' . $info['type']  . '" van het veld "' . $fieldname . '" wordt nog niet ondersteund.', 'error');
+  }
 }
