@@ -13,7 +13,7 @@ function spcivisync_menu() {
     'type'             => MENU_CALLBACK,
     'page callback'    => 'spcivisync_sync',
     'page arguments'   => array(5),
-    'access arguments' => array('access administration pages'),
+    'access callback' => sprbs_access_check(),
   );
 
   $items['admin/config/sp/spcivisync'] = array(
@@ -95,17 +95,34 @@ function spcivisync_sync($user_id) {
       }
     }
   }
+  drupal_set_message('CiviCRM Drupal sync afgerond.');
   drupal_goto('admin/config/sp/spcivisync/sync');
 }
 
 function spcivisync_sync_user($user, $test = FALSE) {
   spcivisync_sync_roles($user, $test);
+  if (!$test) {
+    drupal_set_message(t('Synced CiviCRM relations with Drupal roles for user @user.', array('@user' => $user->name)));
+    watchdog('spcivisync', 'Synced CiviCRM relations with Drupal roles for user @user.', array('@user' => $user->name));
+  }
   spcivisync_sync_fields($user, $test);
+  if (!$test) {
+    drupal_set_message(t('Synced CiviCRM fields with Drupal fields for user @user.', array('@user' => $user->name)));
+    watchdog('spcivisync', 'Synced CiviCRM fields with Drupal fields for user @user.', array('@user' => $user->name));
+  }
 }
 
 function spcivisync_sync_all_users($test = FALSE) {
   spcivisync_sync_roles(FALSE, $test);
+  if (!$test) {
+    drupal_set_message(t('Synced CiviCRM fields with Drupal fields.'));
+    watchdog('spcivisync', 'Synced CiviCRM relations with Drupal roles.');
+  }
   spcivisync_sync_fields(FALSE, $test);
+  if (!$test) {
+    drupal_set_message(t('Synced CiviCRM relations with Drupal roles.'));
+    watchdog('spcivisync', 'Synced CiviCRM fields with Drupal fields.');
+  }
 }
 
 function spcivisync_get_civi_relationships($sync = TRUE) {
