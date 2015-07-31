@@ -93,6 +93,13 @@ function spcivisync_admin_add_field_field_rules($form, &$form_state) {
     '#type' => 'fieldset', 
     '#prefix' => '<h4>of email veld</h4>',
   );
+
+  $form['fields']['civi_contact_email_fields']['civi_contact_email_primary_field'] = array(
+    '#type' => 'checkbox',
+    '#title' => 'Primair',
+    '#suffix' => 'of',
+  );
+
   $civi_email_location_fields = spcivisync_get_civi_email_locations();
   $civi_email_location_fields = array('0' => 'Selecteer locatie:') + $civi_email_location_fields;
   $form['fields']['civi_contact_email_fields']['civi_contact_email_location_field'] = array(
@@ -104,6 +111,13 @@ function spcivisync_admin_add_field_field_rules($form, &$form_state) {
     '#type' => 'fieldset', 
     '#prefix' => '<h4>of telefoon veld</h4>',
   );
+
+  $form['fields']['civi_contact_phone_fields']['civi_contact_phone_primary_field'] = array(
+    '#type' => 'checkbox',
+    '#title' => 'Primair',
+    '#suffix' => 'of',
+  );
+
   $civi_phone_location_fields = spcivisync_get_civi_phone_locations();
   $civi_phone_location_fields = array('0' => 'Selecteer locatie:') + $civi_phone_location_fields;
   $form['fields']['civi_contact_phone_fields']['civi_contact_phone_location_field'] = array(
@@ -121,6 +135,13 @@ function spcivisync_admin_add_field_field_rules($form, &$form_state) {
     '#type' => 'fieldset', 
     '#prefix' => '<h4>of adres veld</h4>',
   );
+
+  $form['fields']['civi_contact_address_fields']['civi_contact_address_primary_field'] = array(
+    '#type' => 'checkbox',
+    '#title' => 'Primair',
+    '#suffix' => 'of',
+  );
+
   $civi_address_location_fields = spcivisync_get_civi_address_locations();
   $civi_address_location_fields = array('0' => 'Selecteer locatie:') + $civi_address_location_fields;
   $form['fields']['civi_contact_address_fields']['civi_contact_address_location_field'] = array(
@@ -174,21 +195,37 @@ function spcivisync_admin_add_field_field_rules_validate($form, &$form_state) {
     $selected[] = 'civi_contact_simple_field';
   }
   // Check if email field is selected.
-  if ($values['civi_contact_email_location_field']) {
+  if ($values['civi_contact_email_location_field'] || $values['civi_contact_email_primary_field']) {
     $set ++;
-    $selected[] = 'civi_contact_email_location_field';
+    if ($values['civi_contact_email_primary_field']) {
+      $selected[] = 'civi_contact_email_primary_field';
+    }
+    if ($values['civi_contact_email_location_field']) {
+      $selected[] = 'civi_contact_email_location_field';
+    }
+    // Check if not primary and location are selected.
+    if ($values['civi_contact_email_location_field'] && $values['civi_contact_email_primary_field']) {
+      form_set_error('civi_contact_email_primary_field', 'Selecteer of primair of een locatie, niet beiden!');
+    }
   }
   // Check if phone fields are selected.
-  if ($values['civi_contact_phone_location_field'] || $values['civi_contact_phone_type_field']) {
+  if ($values['civi_contact_phone_location_field'] || $values['civi_contact_phone_type_field'] || $values['civi_contact_phone_primary_field']) {
     $set ++;
+    if ($values['civi_contact_phone_primary_field']) {
+      $selected[] = 'civi_contact_phone_primary_field';
+    }
     if ($values['civi_contact_phone_location_field']) {
       $selected[] = 'civi_contact_phone_location_field';
     }
     if ($values['civi_contact_phone_type_field']) {
       $selected[] = 'civi_contact_phone_type_field';
     }
+    // Check if not primary and other options are selected.
+    if ($values['civi_contact_phone_primary_field'] && ($values['civi_contact_phone_location_field'] || $values['civi_contact_phone_type_field'])) {
+      form_set_error('civi_contact_phone_primary_field', 'Selecteer of primair of de andere opties, niet beiden!');
+    }
     // Check if both fields are set.
-    if (!($values['civi_contact_phone_location_field'] && $values['civi_contact_phone_type_field'])) {
+    if (!$values['civi_contact_phone_primary_field'] && !($values['civi_contact_phone_location_field'] && $values['civi_contact_phone_type_field'])) {
       if ($values['civi_contact_phone_location_field']) {
         form_set_error('civi_contact_phone_type_field', 'Selecteer zowel een telefoon locatie als type veld!');
       }
@@ -198,16 +235,23 @@ function spcivisync_admin_add_field_field_rules_validate($form, &$form_state) {
     }
   }
   // Check if address fields are selected.
-  if ($values['civi_contact_address_location_field'] || $values['civi_contact_address_field']) {
+  if ($values['civi_contact_address_location_field'] || $values['civi_contact_address_field'] || $values['civi_contact_address_primary_field']) {
     $set ++;
+    if ($values['civi_contact_address_primary_field']) {
+      $selected[] = 'civi_contact_address_primary_field';
+    }
     if ($values['civi_contact_address_location_field']) {
       $selected[] = 'civi_contact_address_location_field';
     }
     if ($values['civi_contact_address_field']) {
       $selected[] = 'civi_contact_address_field';
     }
+    // Check if not primary and other options are selected.
+    if ($values['civi_contact_address_primary_field'] && ($values['civi_contact_address_location_field'] || $values['civi_contact_address_field'])) {
+      form_set_error('civi_contact_address_primary_field', 'Selecteer of primair of de andere opties, niet beiden!');
+    }
     // Check if both fields are set.
-    if (!($values['civi_contact_address_location_field'] && $values['civi_contact_address_field'])) {
+    if (!$values['civi_contact_address_primary_field'] && !($values['civi_contact_address_location_field'] && $values['civi_contact_address_field'])) {
       if ($values['civi_contact_address_location_field']) {
         form_set_error('civi_contact_address_type_field', 'Selecteer zowel een adres locatie als type veld!');
       }
@@ -217,11 +261,11 @@ function spcivisync_admin_add_field_field_rules_validate($form, &$form_state) {
     }
   }
   if ($set == 0) {
-    form_set_error('fields', 'Selecteer tenminste &eacute;&eacute;n CiviCRM veld!');
+    form_set_error('fields', 'Selecteer tenminste &eacute;&eacute;n CiviCRM type veld!');
   }
   if ($set > 1) {
     foreach ($selected as $error_field) {
-      form_set_error($error_field, 'Selecteer slechts &eacute;&eacute;n veld!');
+      form_set_error($error_field, 'Selecteer slechts &eacute;&eacute;n type veld!');
     }
   }
 }
@@ -236,9 +280,21 @@ function spcivisync_admin_add_field_field_rules_submit($form, &$form_state) {
       'drupal_field' => $values['drupal_field'],
     );
   }
+  elseif ($values['civi_contact_email_primary_field']) {
+    $rules['field-field'][]['email'] = array(
+      'email_primary_field' => TRUE,
+      'drupal_field' => $values['drupal_field'],
+    );
+  }
   elseif ($values['civi_contact_email_location_field']) {
     $rules['field-field'][]['email'] = array(
       'email_location_field' => $values['civi_contact_email_location_field'],
+      'drupal_field' => $values['drupal_field'],
+    );
+  }
+  elseif ($values['civi_contact_phone_primary_field']) {
+    $rules['field-field'][]['phone'] = array(
+      'phone_primary_field' => TRUE,
       'drupal_field' => $values['drupal_field'],
     );
   }
@@ -246,6 +302,12 @@ function spcivisync_admin_add_field_field_rules_submit($form, &$form_state) {
     $rules['field-field'][]['phone'] = array(
       'phone_location_field' => $values['civi_contact_phone_location_field'],
       'phone_type_field' => $values['civi_contact_phone_type_field'],
+      'drupal_field' => $values['drupal_field'],
+    );
+  }
+  elseif ($values['civi_contact_address_primary_field']) {
+    $rules['field-field'][]['address'] = array(
+      'address_primary_field' => TRUE,
       'drupal_field' => $values['drupal_field'],
     );
   }
@@ -299,7 +361,6 @@ function spcivisync_admin_list_rules() {
   }
 
   // Field - field rules.
-  // Simple field rules.
   if (!empty($rules['field-field'])) {
     $output .= '<table><tr><th>CiviCRM velden</th><th></th><th>Drupal velden</th><th></th></tr>';
     $account_fields = spcivisync_get_account_fields();
@@ -308,16 +369,25 @@ function spcivisync_admin_list_rules() {
         $fields = spcivisync_get_civi_contact_fields(FALSE);
         $output .= '<tr><td>' . $fields[$rule['simple']['simple_field']] . '</td><td>&rarr;</td><td>' . $account_fields[$rule['simple']['drupal_field']] . '</td>';
       }
-      elseif (isset($rule['email'])) {
+      elseif (isset($rule['email']['email_primary_field'])) {
+        $output .= '<tr><td>Email (Primair)</td><td>&rarr;</td><td>' . $account_fields[$rule['email']['drupal_field']] . '</td>';
+      }
+      elseif (isset($rule['email']['email_location_field'])) {
         $locations = spcivisync_get_civi_email_locations(FALSE);
         $output .= '<tr><td>Email (locatie: ' . $locations[$rule['email']['email_location_field']] . ')</td><td>&rarr;</td><td>' . $account_fields[$rule['email']['drupal_field']] . '</td>';
       }
-      elseif (isset($rule['phone'])) {
+      elseif (isset($rule['phone']['phone_primary_field'])) {
+        $output .= '<tr><td>Telefoon (Primair)</td><td>&rarr;</td><td>' . $account_fields[$rule['phone']['drupal_field']] . '</td>';
+      }
+      elseif (isset($rule['phone']['phone_location_field'])) {
         $locations = spcivisync_get_civi_phone_locations(FALSE);
         $types = spcivisync_get_civi_phone_types(FALSE);
         $output .= '<tr><td>Telefoon (locatie: ' . $locations[$rule['phone']['phone_location_field']] . ', type: ' . $types[$rule['phone']['phone_type_field']]  . ')</td><td>&rarr;</td><td>' . $account_fields[$rule['phone']['drupal_field']] . '</td>';
       }
-      elseif (isset($rule['address'])) {
+      elseif (isset($rule['address']['address_primary_field'])) {
+        $output .= '<tr><td>Adres (Primair)</td><td>&rarr;</td><td>' . $account_fields[$rule['address']['drupal_field']] . '</td>';
+      }
+      elseif (isset($rule['address']['address_location_field'])) {
         $locations = spcivisync_get_civi_address_locations(FALSE);
         $fields = spcivisync_get_civi_address_fields(FALSE);
         $output .= '<tr><td>Adres (locatie: ' . $locations[$rule['address']['address_location_field']] . ', veld: ' . $fields[$rule['address']['address_field']]  . ')</td><td>&rarr;</td><td>' . $account_fields[$rule['address']['drupal_field']] . '</td>';

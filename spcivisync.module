@@ -540,76 +540,101 @@ function spcivisync_sync_simple_field($users, $rule, $test = FALSE) {
 }
 
 function spcivisync_sync_email_field($users, $rule, $test = FALSE) {
-  $email_location_field = $rule['email_location_field'];
-  $drupal_field = $rule['drupal_field'];
   set_time_limit(0);
-
   // Connect to civiapi.
   $civiapi     = spciviapi_get_api();
 
   foreach ($users as $user) {
+    if (!empty($rule['email_primary_field'])) {
+      $query = array(
+        'sequential' => 1,
+        'return' => 'email',
+        'is_primary' => 1,
+        'contact_id' => $user->name,
+      );
+    }
+    else {
+      $query = array(
+        'sequential' => 1,
+        'return' => 'email',
+        'location_type_id' => $rule['email_location_field'],
+        'contact_id' => $user->name,
+      );
+    }
+
     // Set plain field value.
-    $civiapi->Email->Get(array(
-      'sequential' => 1,
-      'return' => 'email',
-      'location_type_id' => $email_location_field,
-      'contact_id' => $user->name,
-    ));
+    $civiapi->Email->Get($query);
     $results = $civiapi->result();
     if (isset($results->values[0]->email)) {
       $value = $results->values[0]->email;
-      spcivisync_set_account_field_value($user, $drupal_field, $value, $test);
+      spcivisync_set_account_field_value($user, $rule['drupal_field'], $value, $test);
     }
   }
 }
 
 function spcivisync_sync_phone_field($users, $rule, $test = FALSE) {
-  $drupal_field = $rule['drupal_field'];
-  $phone_location_field = $rule['phone_location_field'];
-  $phone_type_field = $rule['phone_type_field'];
   set_time_limit(0);
-
   // Connect to civiapi.
   $civiapi     = spciviapi_get_api();
 
   foreach ($users as $user) {
+    if (!empty($rule['phone_primary_field'])) {
+      $query = array(
+        'sequential' => 1,
+        'return' => 'phone',
+        'is_primary' => 1,
+        'contact_id' => $user->name,
+      );
+    }
+    else {
+      $query = array(
+        'sequential' => 1,
+        'return' => 'phone',
+        'location_type_id' => $rule['phone_location_field'],
+        'phone_type_id' => $rule['phone_type_field'],
+        'contact_id' => $user->name,
+      );
+    }
+
     // Set plain field value.
-    $civiapi->Phone->Get(array(
-      'sequential' => 1,
-      'return' => 'phone',
-      'location_type_id' => $phone_location_field,
-      'phone_type_id' => $phone_type_field,
-      'contact_id' => $user->name,
-    ));
+    $civiapi->Phone->Get($query);
     $results = $civiapi->result();
     if (isset($results->values[0]->phone)) {
       $value = $results->values[0]->phone;
-      spcivisync_set_account_field_value($user, $drupal_field, $value, $test);
+      spcivisync_set_account_field_value($user, $rule['drupal_field'], $value, $test);
     }
   }
 }
 
 function spcivisync_sync_address_field($users, $rule, $test = FALSE) {
-  $drupal_field = $rule['drupal_field'];
-  $address_location_field = $rule['address_location_field'];
-  $address_field = $rule['address_field'];
   set_time_limit(0);
-
   // Connect to civiapi.
   $civiapi     = spciviapi_get_api();
 
   foreach ($users as $user) {
+    if (!empty($rule['address_primary_field'])) {
+      $query = array(
+        'sequential' => 1,
+        'return' => $rule['address_field'],
+        'is_primary' => 1,
+        'contact_id' => $user->name,
+      );
+    }
+    else {
+      $query = array(
+        'sequential' => 1,
+        'return' => $rule['address_field'],
+        'location_type_id' => $rule['address_location_field'],
+        'contact_id' => $user->name,
+      );
+    }
+
     // Set plain field value.
-    $civiapi->Address->Get(array(
-      'sequential' => 1,
-      'return' => $address_field,
-      'location_type_id' => $address_location_field,
-      'contact_id' => $user->name,
-    ));
+    $civiapi->Address->Get($query);
     $results = $civiapi->result();
     if (isset($results->values[0]->$address_field)) {
       $value = $results->values[0]->$address_field;
-      spcivisync_set_account_field_value($user, $drupal_field, $value, $test);
+      spcivisync_set_account_field_value($user, $rule['drupal_field'], $value, $test);
     }
   }
 }
