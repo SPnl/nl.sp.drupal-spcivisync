@@ -11,7 +11,7 @@ function spcivisync_menu() {
   $items['admin/config/sp/spcivisync/sync/%'] = array(
     'title'            => 'SP CiviCRM synchronizatie uitvoeren',
     'type'             => MENU_CALLBACK,
-    'page callback'    => 'spcivisync_sync',
+    'page callback'    => 'spcivisync_menu_sync',
     'page arguments'   => array(5),
     'access callback' => sprbs_access_check(),
   );
@@ -38,6 +38,16 @@ function spcivisync_menu() {
     'weight'           => 1,
     'page callback'    => 'drupal_get_form',
     'page arguments'   => array('spcivisync_admin_add_relation_role_rules'),
+    'file'             => 'spcivisync.page-admin.inc',
+    'access callback' => sprbs_access_check(),
+  );
+
+  $items['admin/config/sp/spcivisync/add-group-role-rule'] = array(
+    'title'            => 'Groep-rol',
+    'type'             => MENU_LOCAL_TASK,
+    'weight'           => 1,
+    'page callback'    => 'drupal_get_form',
+    'page arguments'   => array('spcivisync_admin_add_group_role_rules'),
     'file'             => 'spcivisync.page-admin.inc',
     'access callback' => sprbs_access_check(),
   );
@@ -81,17 +91,18 @@ function spcivisync_menu() {
   return $items;
 }
 
-function spcivisync_sync($user_id) {
+function spcivisync_menu_sync($user_id) {
   // Check if all users should be synced.
   if (empty($user_id) || $user_id == 'all') {
-    spcivisync_sync_all_users();
+    $drupal_users = spcivisync_get_users();
+    spcivisync_sync_users($drupal_users);
   }
   else {
     // Sync single user.
     if (filter_var($user_id, FILTER_VALIDATE_INT)) {
-      $drupal_users = spcivisync_get_users();
-      if (!empty($drupal_users[$user_id])) {
-        spcivisync_sync_user($drupal_users[$user_id]);
+      $drupal_user = user_load($user_id);
+      if ($drupal_user !== FALSE) {
+        spcivisync_sync_users(array($drupal_user));
       }
     }
   }
@@ -99,30 +110,9 @@ function spcivisync_sync($user_id) {
   drupal_goto('admin/config/sp/spcivisync/sync');
 }
 
-function spcivisync_sync_user($user, $test = FALSE) {
-  spcivisync_sync_roles($user, $test);
-  if (!$test) {
-    drupal_set_message(t('Synced CiviCRM relations with Drupal roles for user @user.', array('@user' => $user->name)));
-    watchdog('spcivisync', 'Synced CiviCRM relations with Drupal roles for user @user.', array('@user' => $user->name));
-  }
-  spcivisync_sync_fields($user, $test);
-  if (!$test) {
-    drupal_set_message(t('Synced CiviCRM fields with Drupal fields for user @user.', array('@user' => $user->name)));
-    watchdog('spcivisync', 'Synced CiviCRM fields with Drupal fields for user @user.', array('@user' => $user->name));
-  }
-}
-
-function spcivisync_sync_all_users($test = FALSE) {
-  spcivisync_sync_roles(FALSE, $test);
-  if (!$test) {
-    drupal_set_message(t('Synced CiviCRM fields with Drupal fields.'));
-    watchdog('spcivisync', 'Synced CiviCRM relations with Drupal roles.');
-  }
-  spcivisync_sync_fields(FALSE, $test);
-  if (!$test) {
-    drupal_set_message(t('Synced CiviCRM relations with Drupal roles.'));
-    watchdog('spcivisync', 'Synced CiviCRM fields with Drupal fields.');
-  }
+function spcivisync_sync_users($users = array(), $test = FALSE) {
+  spcivisync_sync_roles($users, $test);
+  spcivisync_sync_fields($users, $test);
 }
 
 function spcivisync_get_civi_relationships($sync = TRUE) {
@@ -150,56 +140,207 @@ function spcivisync_get_civi_relationships($sync = TRUE) {
   return $relationships;
 }
 
-function spcivisync_sync_roles($user = FALSE, $test = FALSE) {
+function spcivisync_get_civi_groups($sync = TRUE) {
+  if ($sync) {
+    set_time_limit(0);
+    $civiapi     = spciviapi_get_api();
+    $groups = array();
+
+    $civiapi->Group->Get(array(
+      'sequential'            => 1,
+      'option.limit'          => 9999,
+    ));
+    $groups_results = $civiapi->result();
+    if (isset($groups_results->values)) {
+      foreach ($groups_results->values as $value) {
+        if (
+          empty($value->group_type) ||
+          in_array('1', $value->group_type)
+        ) {
+          $groups[$value->id] = $value->title;
+        }
+      }
+      asort($groups);
+      variable_set('spcivisync_groups', $groups);
+      return $groups;
+    }
+    else {
+      drupal_set_message('Error syncing civicrm relationship types, using saved data.', 'warning');
+    }
+  }
+  $groups = variable_get('spcivisync_groups', 'FALSE');
+  return $groups;
+}
+
+function spcivisync_sync_roles($users = array(), $test = FALSE) {
+  set_time_limit(0);
+
+  // Connect to civiapi.
+  $civiapi     = spciviapi_get_api();
+
   // Settings and variables.
-  $sync_roles = spcivisync_get_roles();
   $rules = variable_get('spcivisync_rules');
 
-  if (!empty($rules['relations-roles'])) {
-
-    if ($test) {
-      drupal_set_message('<strong>Synchronizatie CiviCRM relaties met Drupal rollen.</strong>');
-    }
-
-    // Create relation-role and role-relation sync tables from rules.
-    foreach ($rules['relations-roles'] as $rule_id => $rule) {
-      if ($test) {
-        drupal_set_message('Relatie rol regel id. ' . $rule_id);
+  // Create mapping group to roles.
+  foreach ($rules['groups-roles'] as $key => $rule_values) {
+    foreach ($rule_values['civi_groups'] as $group_id => $group_name) {
+      foreach ($rule_values['drupal_roles'] as $role_id => $role_name) {
+        $mapping['groups'][$group_id][$role_id] = $role_id;
       }
-      foreach ($rule['drupal_roles'] as $role_id => $role_name) {
-        foreach ($rule['civi_relations'] as $relation_id => $relation_name) {
-          $relation_role_sync_table[$relation_id][$role_id] = $role_name;
-          $role_relation_sync_table[$role_id][$relation_id] = $relation_name;
+    }
+  }
+
+  // Create mapping civi group users to drupal roles.
+  foreach ($mapping['groups'] as $group_id => $roles) {
+    // Get users in group.
+    $query = array(
+      'sequential' => 1,
+      'option.limit' => 9999,
+      'return' => 'id',
+      'group' => $group_id,
+      'is_active' => 1,
+    );
+    if (count($users) == 1) {
+      $query['id'] = $users[0]->name;
+    }
+    $civiapi->Contact->Get($query);
+    $results = $civiapi->result();
+    if (isset($results->values)) {
+      foreach ($results->values as $contact) {
+        foreach ($roles as $role) {
+          if (isset($contact->contact_id)) {
+            if (filter_var($contact->contact_id, FILTER_VALIDATE_INT) !== FALSE) {
+              $users_roles[$contact->contact_id][$role] = $role;
+              $roles_users[$role][$contact->contact_id] = $contact->contact_id;
+            }
+          }
         }
       }
     }
+  }
 
-    $drupal_users = spcivisync_get_users($user);
+  // Create mapping relation to roles.
+  foreach ($rules['relations-roles'] as $key => $rule_values) {
+    foreach ($rule_values['civi_relations'] as $relation_id => $relation_name) {
+      foreach ($rule_values['drupal_roles'] as $role_id => $role_name) {
+        $mapping['relations'][$relation_id][$role_id] = $role_id;
+      }
+    }
+  }
 
-    // Process relations and roles for each user.
-    foreach ($drupal_users as $drupal_user) {
-      // Get civi user relations.
-      $civi_relationships = spcivisync_get_civi_relations($drupal_user);
-      if ($civi_relationships !== FALSE) {
-        // Check if civicrm relationships need to be synced with roles.
-        foreach ($role_relation_sync_table as $role_id => $role_relations) {
-          $role_set = FALSE;
-          foreach ($role_relations as $role_relation_id => $role_relation_name) {
-            foreach ($civi_relationships as $civi_relationship) {
-              // Check relation start and end date.
-              if (spcivisync_check_date($civi_relationship)) {
-                // check if rule role relation id equals civi relation id.
-                if ($civi_relationship->relationship_type_id == $role_relation_id) {
-                  spcivisync_set_role($drupal_user, $role_id, $test);
-                  $role_set = TRUE;
-                  break 2;
-                }
-              }
+  // Add mapping civi relation users to drupal roles.
+  foreach ($mapping['relations'] as $relation_id => $roles) {
+    // Get users in group.
+    $query = array(
+      'sequential' => 1,
+      'option.limit' => 9999,
+      'relationship_type_id' => $relation_id,
+      'is_active' => 1,
+    );
+    if (count($users) == 1) {
+      $query['contact_id'] = $users[0]->name;
+    }
+    $civiapi->Relationship->Get($query);
+    $results = $civiapi->result();
+    if (isset($results->values)) {
+      foreach ($results->values as $contact) {
+        foreach ($roles as $role) {
+          if (isset($contact->contact_id_a)) {
+            if (filter_var($contact->contact_id_a, FILTER_VALIDATE_INT) !== FALSE) {
+              $users_roles[$contact->contact_id_a][$role] = $role;
+              $roles_users[$role][$contact->contact_id_a] = $contact->contact_id_a;
             }
           }
-          if ($role_set == FALSE) {
-            spcivisync_unset_role($drupal_user, $role_id, $test);
+        }
+      }
+    }
+  }
+
+  // Set users roles.
+  $admin_rid = user_role_load_by_name('administrator')->rid;
+  $authenticated_user_role = user_role_load_by_name('authenticated user');
+  $roles_to_set = spcivisync_get_roles_to_sync();
+
+  if ($test) {
+    drupal_set_message('<strong>Synchronizatie CiviCRM groepen en relaties met Drupal rollen.</strong>');
+  }
+  foreach ($users_roles as $username => $roles) {
+    // Check if user exists.
+    $user = user_load_by_name($username);
+    if (!$user) {
+      // Create user.
+      $password = $username . user_password(4);
+       
+      //set up the user fields
+      $fields = array(
+        'name' => $username,
+        'mail' => $username . '@spnet.nl',
+        'pass' => $username . user_password(4),
+        'status' => 1,
+        'init' => 'email address',
+        'roles' => array(),
+      );
+      if ($test) {
+        drupal_set_message('Created user ' . $user->name);
+      }
+      else {
+        $user = user_save('', $fields);
+      }
+    }
+    // Make sure administrators roles are not changed.
+    if (!isset($user->roles[$admin_rid])) {
+      $user_roles = $user->roles;
+      // Unset role that is managed by sync rules, but should not be set.
+      foreach ($user_roles as $rid => $role_name) {
+        if (array_key_exists($rid, $roles_to_set)) {
+          if (!in_array($rid, $roles)) {
+            if ($test) {
+              drupal_set_message('Unset role "' . $roles_to_set[$rid] . '"');
+            }
+            else {
+              unset ($user_roles[$rid]);
+            }
           }
+        }
+      }
+      // Set sync roles.
+      foreach($roles as $role_id) {
+        if ($test) {
+          drupal_set_message('Set role "' . $roles_to_set[$role_id] . '"');
+        }
+        else {
+          $user_roles[$role_id] = $roles_to_set[$role_id];
+        }
+      }
+      if (!$test) {
+        // Set roles for user.
+        $user->roles = $user_roles;
+        $user = user_save($user);
+      }
+    }
+  }
+
+  // Remove set roles when user not in civi.
+  if (count($users) == 1) {
+    $drupal_users = $users;
+  }
+  else {
+    $drupal_users = spcivisync_get_users();
+  }
+  foreach ($drupal_users as $drupal_user) {
+    if (!key_exists($drupal_user->name, $users_roles)) {
+      foreach ($roles_to_set as $rid => $role_name) {
+        if (user_has_role($rid, $drupal_user)) {
+          $user_roles = $drupal_user->roles;
+          unset($user_roles[$rid]);
+          if ($test) {
+            drupal_set_message('Unset role "' . $roles_to_set[$rid] . ' for user ' . $drupal_user->name . '"');
+          }
+          else {
+            $drupal_user->roles = $user_roles;
+            user_save($drupal_user);
+          }
+          continue;
         }
       }
     }
@@ -212,45 +353,28 @@ function spcivisync_get_roles() {
   return $sync_roles;
 }
 
-function spcivisync_set_role($user, $role_id, $test = FALSE) {
-  $sync_roles = spcivisync_get_roles();
-  // Set user role.
-  if (empty($user->roles[$role_id])) {
-    $user_roles = $user->roles;
-    $user_roles[$role_id] = $sync_roles[$role_id];
-    $user->roles = $user_roles;
-    if ($test) {
-      drupal_set_message('Gebruiker: ' . $user->name . '<br/>Rol: ' . $sync_roles[$role_id]);
-    }
-    else {
-      user_save($user);
-    }
+function spcivisync_get_user_civi_groups($user) {
+  set_time_limit(0);
+
+  // Connect to civiapi.
+  $civiapi     = spciviapi_get_api();
+
+  // Get civicrm relationships for user.
+  $civiapi->GroupContact->Get(array(
+    'sequential' => 1,
+    'option.limit' => 9999,
+    'return' => 'id,is_active',
+    'contact_id' => $user->name,
+    'is_active' => 1,
+  ));
+  $civi_relationships_results = $civiapi->result();
+  if (isset($civi_relationships_results->values)) {
+    return $civi_relationships_results->values;
   }
-  elseif ($test) {
-    drupal_set_message('Rol: ' .  $sync_roles[$role_id] . ' reeds ingesteld.');
-  }
+  return FALSE;
 }
 
-function spcivisync_unset_role($user, $role_id, $test = FALSE) {
-  $sync_roles = spcivisync_get_roles();
-  // Unset user role.
-  if (!empty($user->roles[$role_id])) {
-    $user_roles = $user->roles;
-    unset($user_roles[$role_id]);
-    $user->roles = $user_roles;
-    if ($test) {
-      drupal_set_message('User ' . $user->name . ' role removed: ' . $sync_roles[$role_id]);
-    }
-    else {
-      user_save($user);
-    }
-  }
-  elseif ($test) {
-    drupal_set_message('Rol: ' .  $sync_roles[$role_id] . ' reeds afwezig.');
-  }
-}
-
-function spcivisync_get_civi_relations($user) {
+function spcivisync_get_user_civi_relations($user) {
   set_time_limit(0);
 
   // Connect to civiapi.
@@ -459,10 +583,9 @@ function spcivisync_get_account_fields() {
   return $results;
 }
 
-function spcivisync_sync_fields($user = FALSE, $test = FALSE) {
+function spcivisync_sync_fields($users = array(), $test = FALSE) {
   // Settings and variables.
   $rules = variable_get('spcivisync_rules');
-  $users = spcivisync_get_users($user);
 
   // Sync fields.
   if (!empty($rules['field-field'])) {
@@ -491,8 +614,6 @@ function spcivisync_sync_fields($user = FALSE, $test = FALSE) {
 function spcivisync_sync_simple_field($users, $rule, $test = FALSE) {
   $simple_field = $rule['simple_field'];
   $drupal_field = $rule['drupal_field'];
-  dpm($simple_field);
-  dpm($drupal_field);
   set_time_limit(0);
 
   // Connect to civiapi.
@@ -666,15 +787,10 @@ function spcivisync_sync_address_field($users, $rule, $test = FALSE) {
   }
 }
 
-function spcivisync_get_users($user = FALSE) {
+function spcivisync_get_users() {
   $admin_rid = user_role_load_by_name('administrator')->rid;
   // Get user(s).
-  if ($user) {
-    $users = entity_load('user', array($user->uid));
-  }
-  else {
-    $users = entity_load('user');
-  }
+  $users = entity_load('user');
   // Remove anonymous user.
   unset($users[0]);
 
@@ -682,6 +798,9 @@ function spcivisync_get_users($user = FALSE) {
   foreach ($users as $id => $user) {
     // Do not sync admin users.
     if (isset($user->roles[$admin_rid])) {
+      unset($users[$id]);
+    }
+    if (filter_var($user->name, FILTER_VALIDATE_INT) === FALSE) {
       unset($users[$id]);
     }
   }
@@ -735,4 +854,16 @@ function spcivisync_set_account_field_value($user, $fieldname, $value, $test = F
   default :
       drupal_set_message('Helaas, het Drupal veldtype "' . $info['type']  . '" van het veld "' . $fieldname . '" wordt nog niet ondersteund.', 'error');
   }
+}
+
+function spcivisync_get_roles_to_sync() {
+  $roles = array();
+  $rules = variable_get('spcivisync_rules');
+  foreach ($rules['relations-roles'] as $values) {
+    $roles = $roles + $values['drupal_roles'];
+  }
+  foreach ($rules['groups-roles'] as $values) {
+    $roles = $roles + $values['drupal_roles'];
+  }
+  return $roles;
 }

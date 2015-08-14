@@ -15,6 +15,8 @@ function spcivisync_drush_command() {
 	return $items;
 }
 
-function drush_spcivisync_spcivisync() {
-	return spcivisync_sync_all_users();
+function drush_spcivisync() {
+  $drupal_users = spcivisync_get_users();
+  spcivisync_sync_users($drupal_users);
+  return;
 }

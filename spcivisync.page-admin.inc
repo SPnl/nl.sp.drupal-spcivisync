@@ -1,5 +1,77 @@
 <?php
 
+function spcivisync_admin_add_group_role_rules($form, &$form_state) {
+  $form = array();
+  $groups = spcivisync_get_civi_groups();
+  $form['groups'] = array(
+    '#type' => 'fieldset', 
+    '#title' => 'CiviCRM groepen -> Drupal rollen',
+  );
+  $form['groups']['civi_groups'] = array(
+    '#type' => 'select',
+    '#title' => 'CiviCRM groepen',
+    '#options' => $groups,
+    '#multiple' => TRUE,
+    '#required' => TRUE,
+    '#description' => 'Mailgroepen worden niet weergegeven.',
+  );
+  $roles = spcivisync_get_roles();
+  $form['groups']['drupal_roles'] = array(
+    '#type' => 'select',
+    '#title' => 'Drupal rol(len)',
+    '#options' => $roles,
+    '#multiple' => TRUE,
+    '#required' => TRUE,
+  );
+
+  $form['groups']['submit'] = array(
+    '#type'  => 'submit',
+    '#value' => 'Voeg toe',
+    '#submit' => array('spcivisync_admin_add_group_role_rules_submit'),
+  );
+
+  return $form;
+}
+
+function spcivisync_admin_add_group_role_rules_submit($form, &$form_state) {
+  //variable_set('spcivisync_rules', array());
+  $duplicates = array();
+  $values = $form_state['values'];
+  // Create values to store.
+  foreach ($values['civi_groups'] as $value) {
+    $civi_groups[$value] = $form['groups']['civi_groups']['#options'][$value];
+  }
+  foreach ($values['drupal_roles'] as $value) {
+    $drupal_roles[$value] = $form['groups']['drupal_roles']['#options'][$value];
+  }
+  // Store values.
+  $rules = variable_get('spcivisync_rules', array());
+  $new_rules = $rules;
+  $new_rules['groups-roles'][] = array(
+    'civi_groups' => $civi_groups,
+    'drupal_roles' => $drupal_roles,
+  );
+  // Controleer of regel reeds bestaat.
+  foreach ($new_rules['groups-roles'] as $key_a => $rule_a) {
+    $duplicates[$key_a] = 0;
+    foreach ($new_rules['groups-roles'] as $key_b => $rule_b) {
+      if ($rule_a == $rule_b) {
+        $duplicates[$key_a] ++;
+        foreach ($duplicates as $number) {
+          if ($number > 1) {
+            // Regel bestaat reeds.
+            drupal_set_message('Regel bestaat al, er is geen nieuwe regel toegevoegd.', 'error');
+            return;
+          }
+        }
+      }
+    }
+  }
+  // Nieuwe regel.
+  variable_set('spcivisync_rules', $new_rules);
+  drupal_set_message('Regel is opgeslagen.');
+}
+
 function spcivisync_admin_add_relation_role_rules($form, &$form_state) {
   $form = array();
   $relations = spcivisync_get_civi_relationships();
@@ -343,6 +415,23 @@ function spcivisync_admin_add_field_field_rules_submit($form, &$form_state) {
 function spcivisync_admin_list_rules() {
   $rules = variable_get('spcivisync_rules');
   $output = '';
+  // Group - role rules.
+  if (!empty($rules['groups-roles'])) {
+    $output .= '<table><tr><th>Id</th><th>CiviCRM groepen</th><th></th><th>Drupal rollen</th><th></th></tr>';
+    foreach($rules['groups-roles'] as $rule_id => $rule) {
+      $output .= '<tr><td>' . $rule_id . '</td><td>';
+      foreach ($rule['civi_groups'] as $id => $title) {
+        $output .= $title . '<br/>';
+      }
+      $output .= '</td><td>&rarr;</td><td>';
+      foreach ($rule['drupal_roles'] as $id => $title) {
+        $output .= $title . '<br/>';
+      }
+      $output .= '</td><td><a href="/admin/config/sp/spcivisync/delete/groups-roles/' . $rule_id . '">' . t('Delete') . '</a></td></tr>';
+    }
+    $output .= '</table>';
+  }
+
   // Relation - role rules.
   if (!empty($rules['relations-roles'])) {
     $output .= '<table><tr><th>Id</th><th>CiviCRM relaties</th><th></th><th>Drupal rollen</th><th></th></tr>';
@@ -441,7 +530,7 @@ function spcivisync_admin_test_rules_submit($form, &$form_state) {
   else {
     $test = TRUE;
   }
-  spcivisync_sync_user($user, $test);
+  spcivisync_sync_users(array($user), $test);
 }
 
 function spcivisync_admin_sync() {
@@ -451,6 +540,16 @@ function spcivisync_admin_sync() {
 function spcivisync_delete($type, $rule_id) {
   $rules = variable_get('spcivisync_rules');
   switch ($type) {
+  case 'groups-roles':
+    if (!empty($rules['groups-roles'][$rule_id])) {
+      unset($rules['groups-roles'][$rule_id]);
+      variable_set('spcivisync_rules', $rules);
+      drupal_set_message('Rule was deleted.');
+    }
+    else {
+      drupal_set_message('Error deleting rule.', 'error');
+    }
+    break;
   case 'relations-roles':
     if (!empty($rules['relations-roles'][$rule_id])) {
       unset($rules['relations-roles'][$rule_id]);
