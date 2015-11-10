@@ -94,8 +94,11 @@ function spcivisync_menu() {
 function spcivisync_menu_sync($user_id) {
   // Check if all users should be synced.
   if (empty($user_id) || $user_id == 'all') {
-    $drupal_users = spcivisync_get_users();
-    spcivisync_sync_users($drupal_users);
+    $users = spcivisync_get_users();
+    spcivisync_sync_roles($users);
+    // Possibly new user, so update.
+    $users = spcivisync_get_users();
+    spcivisync_sync_users($users);
   }
   else {
     // Sync single user.
@@ -111,8 +114,17 @@ function spcivisync_menu_sync($user_id) {
 }
 
 function spcivisync_sync_users($users = array(), $test = FALSE) {
-  spcivisync_sync_roles($users, $test);
-  spcivisync_sync_fields($users, $test);
+  if (empty($users)) {
+    $users = spcivisync_get_users();
+    spcivisync_sync_roles($users, $test);
+    // Possibly added new users.
+    $users = spcivisync_get_users();
+    spcivisync_sync_fields($users, $test);
+  }
+  else {
+    spcivisync_sync_roles($users, $test);
+    spcivisync_sync_fields($users, $test);
+  }
 }
 
 function spcivisync_get_civi_relationships($sync = TRUE) {
@@ -191,27 +203,29 @@ function spcivisync_sync_roles($users = array(), $test = FALSE) {
   }
 
   // Create mapping civi group users to drupal roles.
-  foreach ($mapping['groups'] as $group_id => $roles) {
-    // Get users in group.
-    $query = array(
-      'sequential' => 1,
-      'option.limit' => 9999,
-      'return' => 'id',
-      'group' => $group_id,
-      'is_active' => 1,
-    );
-    if (count($users) == 1) {
-      $query['id'] = $users[0]->name;
-    }
-    $civiapi->Contact->Get($query);
-    $results = $civiapi->result();
-    if (isset($results->values)) {
-      foreach ($results->values as $contact) {
-        foreach ($roles as $role) {
-          if (isset($contact->contact_id)) {
-            if (filter_var($contact->contact_id, FILTER_VALIDATE_INT) !== FALSE) {
-              $users_roles[$contact->contact_id][$role] = $role;
-              $roles_users[$role][$contact->contact_id] = $contact->contact_id;
+  if (isset($mapping['groups'])) {
+    foreach ($mapping['groups'] as $group_id => $roles) {
+      // Get users in group.
+      $query = array(
+        'sequential' => 1,
+        'option.limit' => 9999,
+        'return' => 'id',
+        'group' => $group_id,
+        'is_active' => 1,
+      );
+      if (count($users) == 1) {
+        $query['id'] = $users[0]->name;
+      }
+      $civiapi->Contact->Get($query);
+      $results = $civiapi->result();
+      if (isset($results->values)) {
+        foreach ($results->values as $contact) {
+          foreach ($roles as $role) {
+            if (isset($contact->contact_id)) {
+              if (filter_var($contact->contact_id, FILTER_VALIDATE_INT) !== FALSE) {
+                $users_roles[$contact->contact_id][$role] = $role;
+                $roles_users[$role][$contact->contact_id] = $contact->contact_id;
+              }
             }
           }
         }
@@ -229,26 +243,28 @@ function spcivisync_sync_roles($users = array(), $test = FALSE) {
   }
 
   // Add mapping civi relation users to drupal roles.
-  foreach ($mapping['relations'] as $relation_id => $roles) {
-    // Get users in group.
-    $query = array(
-      'sequential' => 1,
-      'option.limit' => 9999,
-      'relationship_type_id' => $relation_id,
-      'is_active' => 1,
-    );
-    if (count($users) == 1) {
-      $query['contact_id'] = $users[0]->name;
-    }
-    $civiapi->Relationship->Get($query);
-    $results = $civiapi->result();
-    if (isset($results->values)) {
-      foreach ($results->values as $contact) {
-        foreach ($roles as $role) {
-          if (isset($contact->contact_id_a)) {
-            if (filter_var($contact->contact_id_a, FILTER_VALIDATE_INT) !== FALSE) {
-              $users_roles[$contact->contact_id_a][$role] = $role;
-              $roles_users[$role][$contact->contact_id_a] = $contact->contact_id_a;
+  if (isset($mapping['relations'])) {
+    foreach ($mapping['relations'] as $relation_id => $roles) {
+      // Get users in group.
+      $query = array(
+        'sequential' => 1,
+        'option.limit' => 9999,
+        'relationship_type_id' => $relation_id,
+        'is_active' => 1,
+      );
+      if (count($users) == 1) {
+        $query['contact_id'] = $users[0]->name;
+      }
+      $civiapi->Relationship->Get($query);
+      $results = $civiapi->result();
+      if (isset($results->values)) {
+        foreach ($results->values as $contact) {
+          foreach ($roles as $role) {
+            if (isset($contact->contact_id_a)) {
+              if (filter_var($contact->contact_id_a, FILTER_VALIDATE_INT) !== FALSE) {
+                $users_roles[$contact->contact_id_a][$role] = $role;
+                $roles_users[$role][$contact->contact_id_a] = $contact->contact_id_a;
+              }
             }
           }
         }
@@ -285,6 +301,13 @@ function spcivisync_sync_roles($users = array(), $test = FALSE) {
       }
       else {
         $user = user_save('', $fields);
+      }
+    }
+    else {
+      if (!strpos($user->name, '@spnet')) {
+        $user->mail = $username . '@spnet.nl';
+        $user->pass = $username . user_password(4);
+        $user = user_save($user);
       }
     }
     // Make sure administrators roles are not changed.
