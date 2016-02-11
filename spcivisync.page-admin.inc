@@ -229,23 +229,7 @@ function spcivisync_admin_add_field_field_rules($form, &$form_state) {
   );
 
   $drupal_fields = spcivisync_get_account_fields();
-  // Cleanup already used fields
-  $rules = variable_get('spcivisync_rules', array());
-  if (!empty($rules['field-field'])) {
-    foreach ($rules['field-field'] as $key => $value) {
-      foreach (array('simple', 'email', 'phone', 'address') as $type) {
-        if (isset($value[$type])) {
-          unset($drupal_fields[$value[$type]['drupal_field']]);
-        }
-      }
-    }
-  }
-  $form['fields']['drupal_field'] = array(
-    '#type' => 'select',
-    '#prefix' => '<h1>Met:</h1><h4>Drupal account veld</h4>',
-    '#required' => TRUE,
-    '#options' => $drupal_fields,
-  );
+  spcivisync_cleanup_used_fields($drupal_fields); 
 
   $form['fields']['submit'] = array(
     '#type'  => 'submit',
@@ -412,6 +396,74 @@ function spcivisync_admin_add_field_field_rules_submit($form, &$form_state) {
   return;
 }
 
+function spcivisync_admin_add_relation_field_rules($form, &$form_state) {
+  $form = array();
+  $relations = spcivisync_get_civi_relationships();
+  $form['relation-field'] = array(
+    '#type' => 'fieldset', 
+    '#title' => 'CiviCRM relaties -> Drupal velden',
+  );
+  $form['relation-field']['civi_relation'] = array(
+    '#type' => 'select',
+    '#title' => 'CiviCRM relatie(s)',
+    '#options' => $relations,
+    '#required' => TRUE,
+    '#prefix' => '<h1>Synchronizeer:</h1><h4>Relatie</h4>',
+  );
+
+  $drupal_fields = spcivisync_get_account_fields();
+  spcivisync_cleanup_used_fields($drupal_fields); 
+  $form['relation-field']['drupal_field'] = array(
+    '#type' => 'select',
+    '#prefix' => '<h1>Met:</h1><h4>Drupal account veld</h4>',
+    '#required' => TRUE,
+    '#options' => $drupal_fields,
+  );
+
+  $form['relation-field']['submit'] = array(
+    '#type'  => 'submit',
+    '#value' => 'Voeg toe',
+    '#submit' => array('spcivisync_admin_add_relation_field_rules_submit'),
+  );
+
+  return $form;
+}
+
+function spcivisync_admin_add_relation_field_rules_submit($form, &$form_state) {
+  $values = $form_state['values'];
+
+  // Create values to store.
+  $store = array(
+    $values['civi_relation'] => $form['relation-field']['civi_relation']['#options'][$values['civi_relation']],
+  );
+
+  // Store values.
+  $rules = variable_get('spcivisync_rules', array());
+  $new_rules = $rules;
+  $new_rules['relation-field'][] = array(
+    'civi_relation' => $store,
+    'drupal_field' => $values['drupal_field'],
+  );
+  // Controleer of regel reeds bestaat.
+  $duplicates = 0;
+  foreach ($new_rules['relation-field'] as $rule_a) {
+    foreach ($new_rules['relation-field'] as $rule_b) {
+      if ($rule_a === $rule_b) {
+        $duplicates ++;
+      }
+    }
+  }
+  if ($duplicates > 1) {
+    // Regel bestaat reeds.
+    drupal_set_message('Regel bestaat al, er is geen nieuwe regel toegevoegd.', 'error');
+    return;
+  }
+
+  // Nieuwe regel.
+  variable_set('spcivisync_rules', $new_rules);
+  drupal_set_message('Regel is opgeslagen.');
+}
+
 function spcivisync_admin_list_rules() {
   $rules = variable_get('spcivisync_rules');
   $output = '';
@@ -451,40 +503,56 @@ function spcivisync_admin_list_rules() {
 
   // Field - field rules.
   if (!empty($rules['field-field'])) {
-    $output .= '<table><tr><th>CiviCRM velden</th><th></th><th>Drupal velden</th><th></th></tr>';
+    $output .= '<table><tr><th>Id</th><th>CiviCRM velden</th><th></th><th>Drupal velden</th><th></th></tr>';
     $account_fields = spcivisync_get_account_fields();
     foreach ($rules['field-field'] as $rule_id => $rule) {
+      $output .= '<tr><td>' . $rule_id . '</td>';
       if (isset($rule['simple'])) {
         $fields = spcivisync_get_civi_contact_fields(FALSE);
-        $output .= '<tr><td>' . $fields[$rule['simple']['simple_field']] . '</td><td>&rarr;</td><td>' . $account_fields[$rule['simple']['drupal_field']] . '</td>';
+        $output .= '<td>' . $fields[$rule['simple']['simple_field']] . '</td><td>&rarr;</td><td>' . $account_fields[$rule['simple']['drupal_field']] . '</td>';
       }
       elseif (isset($rule['email']['email_primary_field'])) {
-        $output .= '<tr><td>Email (Primair)</td><td>&rarr;</td><td>' . $account_fields[$rule['email']['drupal_field']] . '</td>';
+        $output .= '<td>Email (Primair)</td><td>&rarr;</td><td>' . $account_fields[$rule['email']['drupal_field']] . '</td>';
       }
       elseif (isset($rule['email']['email_location_field'])) {
         $locations = spcivisync_get_civi_email_locations(FALSE);
-        $output .= '<tr><td>Email (locatie: ' . $locations[$rule['email']['email_location_field']] . ')</td><td>&rarr;</td><td>' . $account_fields[$rule['email']['drupal_field']] . '</td>';
+        $output .= '<td>Email (locatie: ' . $locations[$rule['email']['email_location_field']] . ')</td><td>&rarr;</td><td>' . $account_fields[$rule['email']['drupal_field']] . '</td>';
       }
       elseif (isset($rule['phone']['phone_primary_field'])) {
-        $output .= '<tr><td>Telefoon (Primair)</td><td>&rarr;</td><td>' . $account_fields[$rule['phone']['drupal_field']] . '</td>';
+        $output .= '<td>Telefoon (Primair)</td><td>&rarr;</td><td>' . $account_fields[$rule['phone']['drupal_field']] . '</td>';
       }
       elseif (isset($rule['phone']['phone_location_field'])) {
         $locations = spcivisync_get_civi_phone_locations(FALSE);
         $types = spcivisync_get_civi_phone_types(FALSE);
-        $output .= '<tr><td>Telefoon (locatie: ' . $locations[$rule['phone']['phone_location_field']] . ', type: ' . $types[$rule['phone']['phone_type_field']]  . ')</td><td>&rarr;</td><td>' . $account_fields[$rule['phone']['drupal_field']] . '</td>';
+        $output .= '<td>Telefoon (locatie: ' . $locations[$rule['phone']['phone_location_field']] . ', type: ' . $types[$rule['phone']['phone_type_field']]  . ')</td><td>&rarr;</td><td>' . $account_fields[$rule['phone']['drupal_field']] . '</td>';
       }
       elseif (isset($rule['address']['address_primary_field'])) {
-        $output .= '<tr><td>Adres (Primair)</td><td>&rarr;</td><td>' . $account_fields[$rule['address']['drupal_field']] . '</td>';
+        $output .= '<td>Adres (Primair)</td><td>&rarr;</td><td>' . $account_fields[$rule['address']['drupal_field']] . '</td>';
       }
       elseif (isset($rule['address']['address_location_field'])) {
         $locations = spcivisync_get_civi_address_locations(FALSE);
         $fields = spcivisync_get_civi_address_fields(FALSE);
-        $output .= '<tr><td>Adres (locatie: ' . $locations[$rule['address']['address_location_field']] . ', veld: ' . $fields[$rule['address']['address_field']]  . ')</td><td>&rarr;</td><td>' . $account_fields[$rule['address']['drupal_field']] . '</td>';
+        $output .= '<td>Adres (locatie: ' . $locations[$rule['address']['address_location_field']] . ', veld: ' . $fields[$rule['address']['address_field']]  . ')</td><td>&rarr;</td><td>' . $account_fields[$rule['address']['drupal_field']] . '</td>';
       }
       $output .= '<td><a href="/admin/config/sp/spcivisync/delete/field-field/' . $rule_id . '">' . t('Delete') . '</a></td></tr>';
     }
   }
   $output .= '</table>';
+
+  // Relation - field rules.
+  if (!empty($rules['relation-field'])) {
+    $output .= '<table><tr><th>Id</th><th>CiviCRM relaties</th><th></th><th>Drupal velden</th><th></th></tr>';
+    foreach($rules['relation-field'] as $rule_id => $rule) {
+      $output .= '<tr><td>' . $rule_id . '</td><td>';
+      foreach ($rule['civi_relation'] as $id => $title) {
+        $output .= $title . '<br/>';
+      }
+      $output .= '</td><td>&rarr;</td><td>';
+      $output .= $rule['drupal_field'] . '<br/>';
+      $output .= '</td><td><a href="/admin/config/sp/spcivisync/delete/relation-field/' . $rule_id . '">' . t('Delete') . '</a></td></tr>';
+    }
+    $output .= '</table>';
+  }
 
   if (empty($output)) {
     drupal_set_message('Er zijn nog geen regels aangemaakt.', 'warning');
@@ -570,7 +638,34 @@ function spcivisync_delete($type, $rule_id) {
       drupal_set_message('Error deleting rule.', 'error');
     }
     break;
+  case 'relation-field':
+    if (!empty($rules['relation-field'][$rule_id])) {
+      unset($rules['relation-field'][$rule_id]);
+      variable_set('spcivisync_rules', $rules);
+      drupal_set_message('Rule was deleted.');
+    }
+    break;
   }
   drupal_goto('/admin/config/sp/spcivisync');
 }
 
+function spcivisync_cleanup_used_fields(&$drupal_fields) {
+  // Cleanup already used fields
+  $rules = variable_get('spcivisync_rules', array());
+  if (!empty($rules['field-field'])) {
+    foreach ($rules['field-field'] as $key => $value) {
+      foreach (array('simple', 'email', 'phone', 'address') as $type) {
+        if (isset($value[$type])) {
+          unset($drupal_fields[$value[$type]['drupal_field']]);
+        }
+      }
+    }
+  }
+  if (!empty($rules['relation-field'])) {
+    foreach ($rules['relation-field'] as $key => $value) {
+      if (isset($value['drupal_field'])) {
+        unset($drupal_fields[$value['drupal_field']]);
+      }
+    }
+  }
+}

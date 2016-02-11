@@ -29,4 +29,14 @@ function spcivisync_rules_action_info() {
   return $actions;
 }
 
+function spcivisync_sync_user($account) {
+  spcivisync_sync_users(array($account));
+}
 
+function spcivisync_sync_all_users() {
+  $users = spcivisync_get_users();
+  spcivisync_sync_roles($users);
+  // Possibly new user, so update.
+  $users = spcivisync_get_users();
+  spcivisync_sync_users($users);
+}

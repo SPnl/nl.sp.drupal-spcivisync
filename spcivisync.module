@@ -62,10 +62,20 @@ function spcivisync_menu() {
     'access callback' => sprbs_access_check(),
   );
 
+  $items['admin/config/sp/spcivisync/add-relation-field-rule'] = array(
+    'title'            => 'Relatie - veld',
+    'type'             => MENU_LOCAL_TASK,
+    'weight'           => 3,
+    'page callback'    => 'drupal_get_form',
+    'page arguments'   => array('spcivisync_admin_add_relation_field_rules'),
+    'file'             => 'spcivisync.page-admin.inc',
+    'access callback' => sprbs_access_check(),
+  );
+
   $items['admin/config/sp/spcivisync/test-rule'] = array(
     'title'            => 'Test regels',
     'type'             => MENU_LOCAL_TASK,
-    'weight'           => 3,
+    'weight'           => 4,
     'page callback'    => 'drupal_get_form',
     'page arguments'   => array('spcivisync_admin_test_rules'),
     'file'             => 'spcivisync.page-admin.inc',
@@ -75,7 +85,7 @@ function spcivisync_menu() {
   $items['admin/config/sp/spcivisync/sync'] = array(
     'title'            => 'Sync',
     'type'             => MENU_LOCAL_TASK,
-    'weight'           => 4,
+    'weight'           => 5,
     'page callback'    => 'spcivisync_admin_sync',
     'file'             => 'spcivisync.page-admin.inc',
     'access callback' => sprbs_access_check(),
@@ -284,27 +294,36 @@ function spcivisync_sync_roles($users = array(), $test = FALSE) {
     // Check if user exists.
     $user = user_load_by_name($username);
     if (!$user) {
-      // Create user.
-      $password = $username . user_password(4);
-       
-      //set up the user fields
-      $fields = array(
-        'name' => $username,
-        'mail' => $username . '@spnet.nl',
-        'pass' => $username . user_password(4),
-        'status' => 1,
-        'init' => 'email address',
-        'roles' => array(),
-      );
       if ($test) {
         drupal_set_message('Created user ' . $user->name);
       }
       else {
+        // Create user.
+        $password = $username . user_password(4);
+
+        //set up the user fields
+        $fields = array(
+          'name' => $username,
+          'mail' => $username . '@spnet.nl',
+          'pass' => $username . user_password(4),
+          'status' => 1,
+          'init' => 'email address',
+          'roles' => array(),
+        );
         $user = user_save('', $fields);
+        // Create authmap record
+        if(!user_get_authmaps("spoauth_".$username)) {
+          $authname = 'spoauth_' . $username;
+          user_set_authmaps($user, array('authname_spoauthconsumer' => $authname));
+        }
+
+        if (!$user) {
+          drupal_set_message('Het is niet gelukt een account voor u aan te maken op deze website.', 'error');   
+        }
       }
     }
     else {
-      if (!strpos($user->name, '@spnet')) {
+      if (!strpos($user->mail, '@spnet')) {
         $user->mail = $username . '@spnet.nl';
         $user->pass = $username . user_password(4);
         $user = user_save($user);
@@ -607,6 +626,11 @@ function spcivisync_get_account_fields() {
 }
 
 function spcivisync_sync_fields($users = array(), $test = FALSE) {
+  set_time_limit(0);
+
+  // Connect to civiapi.
+  $civiapi = spciviapi_get_api();
+
   // Settings and variables.
   $rules = variable_get('spcivisync_rules');
 
@@ -618,29 +642,37 @@ function spcivisync_sync_fields($users = array(), $test = FALSE) {
 
     foreach ($rules['field-field'] as $rule) {
       if (!empty($rule['simple'])) {
-        spcivisync_sync_simple_field($users, $rule['simple'], $test);
+        spcivisync_sync_simple_field($users, $rule['simple'], $civiapi, $test);
       }
       elseif (!empty($rule['email'])) {
-        spcivisync_sync_email_field($users, $rule['email'], $test);
+        spcivisync_sync_email_field($users, $rule['email'], $civiapi, $test);
       }
       elseif (!empty($rule['phone'])) {
-        spcivisync_sync_phone_field($users, $rule['phone'], $test);
+        spcivisync_sync_phone_field($users, $rule['phone'], $civiapi, $test);
       }
       elseif (!empty($rule['address'])) {
-        spcivisync_sync_address_field($users, $rule['address'], $test);
+        spcivisync_sync_address_field($users, $rule['address'], $civiapi, $test);
       }
+    }
+  }
+
+  // Sync relation-field.
+  if (!empty($rules['relation-field'])) {
+
+    if ($test) {
+      drupal_set_message('<strong>Synchronizatie CiviCRM relaties met Drupal velden.</strong>');
+    }
+
+    foreach ($rules['relation-field'] as $rule) {
+      spcivisync_sync_relation_field($users, $rule, $civiapi, $test);
     }
   }
   return;
 }
 
-function spcivisync_sync_simple_field($users, $rule, $test = FALSE) {
+function spcivisync_sync_simple_field($users, $rule, $civiapi, $test = FALSE) {
   $simple_field = $rule['simple_field'];
   $drupal_field = $rule['drupal_field'];
-  set_time_limit(0);
-
-  // Connect to civiapi.
-  $civiapi     = spciviapi_get_api();
 
   // Check if it is a group field, and if so, get the group name instead of the id.
   if (strpos($simple_field, ':group:')) {
@@ -653,7 +685,7 @@ function spcivisync_sync_simple_field($users, $rule, $test = FALSE) {
   }
 
   foreach ($users as $user) {
-    // Get civicrm relationships for user.
+    // Get civicrm fields for user.
     if ($groupfield) {
       $civiapi->Contact->Get(array(
         'sequential' => 1,
@@ -701,10 +733,7 @@ function spcivisync_sync_simple_field($users, $rule, $test = FALSE) {
   }
 }
 
-function spcivisync_sync_email_field($users, $rule, $test = FALSE) {
-  set_time_limit(0);
-  // Connect to civiapi.
-  $civiapi     = spciviapi_get_api();
+function spcivisync_sync_email_field($users, $rule, $civiapi, $test = FALSE) {
 
   foreach ($users as $user) {
     if (!empty($rule['email_primary_field'])) {
@@ -737,10 +766,7 @@ function spcivisync_sync_email_field($users, $rule, $test = FALSE) {
   }
 }
 
-function spcivisync_sync_phone_field($users, $rule, $test = FALSE) {
-  set_time_limit(0);
-  // Connect to civiapi.
-  $civiapi     = spciviapi_get_api();
+function spcivisync_sync_phone_field($users, $rule, $civiapi, $test = FALSE) {
 
   foreach ($users as $user) {
     if (!empty($rule['phone_primary_field'])) {
@@ -774,10 +800,7 @@ function spcivisync_sync_phone_field($users, $rule, $test = FALSE) {
   }
 }
 
-function spcivisync_sync_address_field($users, $rule, $test = FALSE) {
-  set_time_limit(0);
-  // Connect to civiapi.
-  $civiapi     = spciviapi_get_api();
+function spcivisync_sync_address_field($users, $rule, $civiapi, $test = FALSE) {
 
   foreach ($users as $user) {
     if (!empty($rule['address_primary_field'])) {
@@ -806,6 +829,44 @@ function spcivisync_sync_address_field($users, $rule, $test = FALSE) {
     }
     else {
       drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $rule['drupal_field'])), 'error');
+    }
+  }
+}
+
+function spcivisync_sync_relation_field($users, $rule, $civiapi, $test = FALSE) {
+
+  foreach ($rule['civi_relation'] as $key => $title) {
+    $relationship_id = $key;
+  }
+
+  foreach ($users as $user) {
+    $query = array(
+      'relationship_type_id' => $relationship_id,
+      'contact_id_a' => $user->name,
+      'return' => 'contact_id_b',
+    );
+
+    // Set plain field value.
+    $civiapi->Relationship->GetSingle($query);
+    $results = $civiapi->result();
+
+    if ($results->is_error) {
+      // Relationship doesn't exist.
+      spcivisync_set_account_field_value($user, $rule['drupal_field'], '', $test);
+    }
+    else {
+      $region_id = $results->contact_id_b;
+      // Get contact display name.
+      $query = array(
+        'contact_id' => $region_id,
+        'return' => 'display_name',
+      );
+      $civiapi->Contact->GetSingle($query);
+      $results = $civiapi->result();
+      if (!empty($results->display_name)) {
+        $region_name = str_replace(array('SP-regio '), '', $results->display_name);
+        spcivisync_set_account_field_value($user, $rule['drupal_field'], $region_name, $test);
+      }
     }
   }
 }
