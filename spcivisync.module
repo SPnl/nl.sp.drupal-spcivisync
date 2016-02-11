@@ -707,10 +707,12 @@ function spcivisync_sync_simple_field($users, $rule, $civiapi, $test = FALSE) {
           spcivisync_set_account_field_value($user, $drupal_field, $value, $test);
         }
         else {
+          spcivisync_set_account_field_value($user, $drupal_field, '', $test);
           drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $drupal_field)), 'error');
         }
       }
       else {
+        spcivisync_set_account_field_value($user, $drupal_field, '', $test);
         drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $drupal_field)), 'error');
       }
     }
@@ -727,6 +729,7 @@ function spcivisync_sync_simple_field($users, $rule, $civiapi, $test = FALSE) {
         spcivisync_set_account_field_value($user, $drupal_field, $value, $test);
       }
       else {
+        spcivisync_set_account_field_value($user, $drupal_field, '', $test);
         drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $drupal_field)), 'error');
       }
     }
@@ -761,6 +764,7 @@ function spcivisync_sync_email_field($users, $rule, $civiapi, $test = FALSE) {
       spcivisync_set_account_field_value($user, $rule['drupal_field'], $value, $test);
     }
     else {
+      spcivisync_set_account_field_value($user, $rule['drupal_field'], '', $test);
       drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $rule['drupal_field'])), 'error');
     }
   }
@@ -795,6 +799,7 @@ function spcivisync_sync_phone_field($users, $rule, $civiapi, $test = FALSE) {
       spcivisync_set_account_field_value($user, $rule['drupal_field'], $value, $test);
     }
     else {
+      spcivisync_set_account_field_value($user, $rule['drupal_field'], '', $test);
       drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $rule['drupal_field'])), 'error');
     }
   }
@@ -828,6 +833,7 @@ function spcivisync_sync_address_field($users, $rule, $civiapi, $test = FALSE) {
       spcivisync_set_account_field_value($user, $rule['drupal_field'], $value, $test);
     }
     else {
+      spcivisync_set_account_field_value($user, $rule['drupal_field'], '', $test);
       drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $rule['drupal_field'])), 'error');
     }
   }
