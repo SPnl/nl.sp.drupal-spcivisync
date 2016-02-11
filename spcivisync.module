@@ -123,17 +123,17 @@ function spcivisync_menu_sync($user_id) {
   drupal_goto('admin/config/sp/spcivisync/sync');
 }
 
-function spcivisync_sync_users($users = array(), $test = FALSE) {
+function spcivisync_sync_users($users = array(), $test = FALSE, $drush_log = FALSE) {
   if (empty($users)) {
     $users = spcivisync_get_users();
-    spcivisync_sync_roles($users, $test);
+    spcivisync_sync_roles($users, $test, $drush_log);
     // Possibly added new users.
     $users = spcivisync_get_users();
-    spcivisync_sync_fields($users, $test);
+    spcivisync_sync_fields($users, $test, $drush_log);
   }
   else {
-    spcivisync_sync_roles($users, $test);
-    spcivisync_sync_fields($users, $test);
+    spcivisync_sync_roles($users, $test, $drush_log);
+    spcivisync_sync_fields($users, $test, $drush_log);
   }
 }
 
@@ -194,7 +194,7 @@ function spcivisync_get_civi_groups($sync = TRUE) {
   return $groups;
 }
 
-function spcivisync_sync_roles($users = array(), $test = FALSE) {
+function spcivisync_sync_roles($users = array(), $test = FALSE, $drush_log = FALSE) {
   set_time_limit(0);
 
   // Connect to civiapi.
@@ -291,6 +291,9 @@ function spcivisync_sync_roles($users = array(), $test = FALSE) {
     drupal_set_message('<strong>Synchronizatie CiviCRM groepen en relaties met Drupal rollen.</strong>');
   }
   foreach ($users_roles as $username => $roles) {
+    if($drush_log) { 
+      drush_log('Syncing: '.$username.' (roles)', 'ok');
+    }
     // Check if user exists.
     $user = user_load_by_name($username);
     if (!$user) {
@@ -625,7 +628,7 @@ function spcivisync_get_account_fields() {
   return $results;
 }
 
-function spcivisync_sync_fields($users = array(), $test = FALSE) {
+function spcivisync_sync_fields($users = array(), $test = FALSE, $drush_log = FALSE) {
   set_time_limit(0);
 
   // Connect to civiapi.
@@ -642,16 +645,16 @@ function spcivisync_sync_fields($users = array(), $test = FALSE) {
 
     foreach ($rules['field-field'] as $rule) {
       if (!empty($rule['simple'])) {
-        spcivisync_sync_simple_field($users, $rule['simple'], $civiapi, $test);
+        spcivisync_sync_simple_field($users, $rule['simple'], $civiapi, $test, $drush_log);
       }
       elseif (!empty($rule['email'])) {
-        spcivisync_sync_email_field($users, $rule['email'], $civiapi, $test);
+        spcivisync_sync_email_field($users, $rule['email'], $civiapi, $test, $drush_log);
       }
       elseif (!empty($rule['phone'])) {
-        spcivisync_sync_phone_field($users, $rule['phone'], $civiapi, $test);
+        spcivisync_sync_phone_field($users, $rule['phone'], $civiapi, $test, $drush_log);
       }
       elseif (!empty($rule['address'])) {
-        spcivisync_sync_address_field($users, $rule['address'], $civiapi, $test);
+        spcivisync_sync_address_field($users, $rule['address'], $civiapi, $test, $drush_log);
       }
     }
   }
@@ -664,13 +667,13 @@ function spcivisync_sync_fields($users = array(), $test = FALSE) {
     }
 
     foreach ($rules['relation-field'] as $rule) {
-      spcivisync_sync_relation_field($users, $rule, $civiapi, $test);
+      spcivisync_sync_relation_field($users, $rule, $civiapi, $test, $drush_log);
     }
   }
   return;
 }
 
-function spcivisync_sync_simple_field($users, $rule, $civiapi, $test = FALSE) {
+function spcivisync_sync_simple_field($users, $rule, $civiapi, $test = FALSE, $drush_log = FALSE) {
   $simple_field = $rule['simple_field'];
   $drupal_field = $rule['drupal_field'];
 
@@ -704,15 +707,15 @@ function spcivisync_sync_simple_field($users, $rule, $civiapi, $test = FALSE) {
         $results = $civiapi->result();
         if (!empty($results->values)) {
           $value = $results->values[0]->display_name;
-          spcivisync_set_account_field_value($user, $drupal_field, $value, $test);
+          spcivisync_set_account_field_value($user, $drupal_field, $value, $test, $drush_log);
         }
         else {
-          spcivisync_set_account_field_value($user, $drupal_field, '', $test);
+          spcivisync_set_account_field_value($user, $drupal_field, '', $test, $drush_log);
           drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $drupal_field)), 'error');
         }
       }
       else {
-        spcivisync_set_account_field_value($user, $drupal_field, '', $test);
+        spcivisync_set_account_field_value($user, $drupal_field, '', $test, $drush_log);
         drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $drupal_field)), 'error');
       }
     }
@@ -726,17 +729,17 @@ function spcivisync_sync_simple_field($users, $rule, $civiapi, $test = FALSE) {
       $results = $civiapi->result();
       if (isset($results->values[0]->$simple_field)) {
         $value = $results->values[0]->$simple_field;
-        spcivisync_set_account_field_value($user, $drupal_field, $value, $test);
+        spcivisync_set_account_field_value($user, $drupal_field, $value, $test, $drush_log);
       }
       else {
-        spcivisync_set_account_field_value($user, $drupal_field, '', $test);
+        spcivisync_set_account_field_value($user, $drupal_field, '', $test, $drush_log);
         drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $drupal_field)), 'error');
       }
     }
   }
 }
 
-function spcivisync_sync_email_field($users, $rule, $civiapi, $test = FALSE) {
+function spcivisync_sync_email_field($users, $rule, $civiapi, $test = FALSE, $drush_log = FALSE) {
 
   foreach ($users as $user) {
     if (!empty($rule['email_primary_field'])) {
@@ -761,16 +764,16 @@ function spcivisync_sync_email_field($users, $rule, $civiapi, $test = FALSE) {
     $results = $civiapi->result();
     if (isset($results->values[0]->email)) {
       $value = $results->values[0]->email;
-      spcivisync_set_account_field_value($user, $rule['drupal_field'], $value, $test);
+      spcivisync_set_account_field_value($user, $rule['drupal_field'], $value, $test, $drush_log);
     }
     else {
-      spcivisync_set_account_field_value($user, $rule['drupal_field'], '', $test);
+      spcivisync_set_account_field_value($user, $rule['drupal_field'], '', $test, $drush_log);
       drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $rule['drupal_field'])), 'error');
     }
   }
 }
 
-function spcivisync_sync_phone_field($users, $rule, $civiapi, $test = FALSE) {
+function spcivisync_sync_phone_field($users, $rule, $civiapi, $test = FALSE, $drush_log = FALSE) {
 
   foreach ($users as $user) {
     if (!empty($rule['phone_primary_field'])) {
@@ -796,16 +799,16 @@ function spcivisync_sync_phone_field($users, $rule, $civiapi, $test = FALSE) {
     $results = $civiapi->result();
     if (isset($results->values[0]->phone)) {
       $value = $results->values[0]->phone;
-      spcivisync_set_account_field_value($user, $rule['drupal_field'], $value, $test);
+      spcivisync_set_account_field_value($user, $rule['drupal_field'], $value, $test, $drush_log);
     }
     else {
-      spcivisync_set_account_field_value($user, $rule['drupal_field'], '', $test);
+      spcivisync_set_account_field_value($user, $rule['drupal_field'], '', $test, $drush_log);
       drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $rule['drupal_field'])), 'error');
     }
   }
 }
 
-function spcivisync_sync_address_field($users, $rule, $civiapi, $test = FALSE) {
+function spcivisync_sync_address_field($users, $rule, $civiapi, $test = FALSE, $drush_log = FALSE) {
 
   foreach ($users as $user) {
     if (!empty($rule['address_primary_field'])) {
@@ -830,16 +833,16 @@ function spcivisync_sync_address_field($users, $rule, $civiapi, $test = FALSE) {
     $results = $civiapi->result();
     if (isset($results->values[0]->$address_field)) {
       $value = $results->values[0]->$address_field;
-      spcivisync_set_account_field_value($user, $rule['drupal_field'], $value, $test);
+      spcivisync_set_account_field_value($user, $rule['drupal_field'], $value, $test, $drush_log);
     }
     else {
-      spcivisync_set_account_field_value($user, $rule['drupal_field'], '', $test);
+      spcivisync_set_account_field_value($user, $rule['drupal_field'], '', $test, $drush_log);
       drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $rule['drupal_field'])), 'error');
     }
   }
 }
 
-function spcivisync_sync_relation_field($users, $rule, $civiapi, $test = FALSE) {
+function spcivisync_sync_relation_field($users, $rule, $civiapi, $test = FALSE, $drush_log = FALSE) {
 
   foreach ($rule['civi_relation'] as $key => $title) {
     $relationship_id = $key;
@@ -858,7 +861,7 @@ function spcivisync_sync_relation_field($users, $rule, $civiapi, $test = FALSE) 
 
     if ($results->is_error) {
       // Relationship doesn't exist.
-      spcivisync_set_account_field_value($user, $rule['drupal_field'], '', $test);
+      spcivisync_set_account_field_value($user, $rule['drupal_field'], '', $test, $drush_log);
     }
     else {
       $region_id = $results->contact_id_b;
@@ -871,7 +874,7 @@ function spcivisync_sync_relation_field($users, $rule, $civiapi, $test = FALSE) 
       $results = $civiapi->result();
       if (!empty($results->display_name)) {
         $region_name = str_replace(array('SP-regio '), '', $results->display_name);
-        spcivisync_set_account_field_value($user, $rule['drupal_field'], $region_name, $test);
+        spcivisync_set_account_field_value($user, $rule['drupal_field'], $region_name, $test, $drush_log);
       }
     }
   }
@@ -897,7 +900,10 @@ function spcivisync_get_users() {
   return $users;
 }
 
-function spcivisync_set_account_field_value($user, $fieldname, $value, $test = FALSE) {
+function spcivisync_set_account_field_value($user, $fieldname, $value, $test = FALSE, $drush_log = FALSE) {
+  if($drush_log) { 
+    drush_log('Syncing: '.$user->name.' ('.$fieldname.')', 'ok');
+  }
   $user_wrapper = entity_metadata_wrapper('user', $user);
   $info = $user_wrapper->$fieldname->info();
   switch ($info['type']) {

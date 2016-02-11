@@ -16,6 +16,6 @@ function spcivisync_drush_command() {
 }
 
 function drush_spcivisync() {
-  spcivisync_sync_users();
+  spcivisync_sync_users(array(), FALSE, TRUE);
   return;
 }
