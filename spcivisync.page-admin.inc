@@ -230,6 +230,12 @@ function spcivisync_admin_add_field_field_rules($form, &$form_state) {
 
   $drupal_fields = spcivisync_get_account_fields();
   spcivisync_cleanup_used_fields($drupal_fields); 
+  $form['fields']['drupal_field'] = array(
+    '#type' => 'select',
+    '#prefix' => '<h1>Met:</h1><h4>Drupal account veld</h4>',
+    '#required' => TRUE,
+    '#options' => $drupal_fields,
+  );
 
   $form['fields']['submit'] = array(
     '#type'  => 'submit',
