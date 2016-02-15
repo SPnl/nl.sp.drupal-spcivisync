@@ -217,6 +217,8 @@ function spcivisync_sync_roles($users = array(), $test = FALSE, $drush_log = FAL
   }
 
   // Create mapping civi group users to drupal roles.
+  $users_roles = array();
+  $roles_users = array();
   if (isset($mapping['groups'])) {
     foreach ($mapping['groups'] as $group_id => $roles) {
       // Get users in group.
@@ -257,8 +259,6 @@ function spcivisync_sync_roles($users = array(), $test = FALSE, $drush_log = FAL
   }
 
   // Add mapping civi relation users to drupal roles.
-  $users_roles = array();
-  $roles_users = array();
   if (isset($mapping['relations'])) {
     foreach ($mapping['relations'] as $relation_id => $roles) {
       // Get users in group.
