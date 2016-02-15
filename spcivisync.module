@@ -155,7 +155,9 @@ function spcivisync_get_civi_relationships($sync = TRUE) {
       return $relationships;
     }
     else {
-      drupal_set_message('Error syncing civicrm relationship types, using saved data.', 'warning');
+      if (spcivisyn_show_message()) {
+        drupal_set_message('Error syncing civicrm relationship types, using saved data.', 'warning');
+      }
     }
   }
   $relationships = variable_get('spcivisync_relationships', 'FALSE');
@@ -187,7 +189,9 @@ function spcivisync_get_civi_groups($sync = TRUE) {
       return $groups;
     }
     else {
-      drupal_set_message('Error syncing civicrm relationship types, using saved data.', 'warning');
+      if (spcivisyn_show_message()) {
+        drupal_set_message('Error syncing civicrm relationship types, using saved data.', 'warning');
+      }
     }
   }
   $groups = variable_get('spcivisync_groups', 'FALSE');
@@ -253,6 +257,8 @@ function spcivisync_sync_roles($users = array(), $test = FALSE, $drush_log = FAL
   }
 
   // Add mapping civi relation users to drupal roles.
+  $users_roles = array();
+  $roles_users = array();
   if (isset($mapping['relations'])) {
     foreach ($mapping['relations'] as $relation_id => $roles) {
       // Get users in group.
@@ -321,7 +327,9 @@ function spcivisync_sync_roles($users = array(), $test = FALSE, $drush_log = FAL
         }
 
         if (!$user) {
-          drupal_set_message('Het is niet gelukt een account voor u aan te maken op deze website.', 'error');   
+          if (spcivisync_show_message()) {
+            drupal_set_message('Het is niet gelukt een account voor u aan te maken op deze website.', 'error');   
+          }
         }
       }
     }
@@ -479,7 +487,9 @@ function spcivisync_get_civi_contact_fields($sync = TRUE) {
       return $results;
     }
     else {
-      drupal_set_message('Error syncing civicrm contact fields, using saved data.', 'warning');
+      if (spcivisync_show_message()) {
+        drupal_set_message('Error syncing civicrm contact fields, using saved data.', 'warning');
+      }
     }
   }
   $results = variable_get('spcivisync_contact_fields', 'FALSE');
@@ -505,7 +515,9 @@ function spcivisync_get_civi_email_locations($sync = TRUE) {
       return $results;
     }
     else {
-      drupal_set_message('Error syncing civicrm email locations, using saved data.', 'warning');
+      if (spcivisync_show_message()) {
+        drupal_set_message('Error syncing civicrm email locations, using saved data.', 'warning');
+      }
     }
   }
   $results = variable_get('spcivisync_email_locations', 'FALSE');
@@ -531,7 +543,9 @@ function spcivisync_get_civi_phone_locations($sync = TRUE) {
       return $results;
     }
     else {
-      drupal_set_message('Error syncing civicrm phone locations, using saved data.', 'warning');
+      if (spcivisync_show_message()) {
+        drupal_set_message('Error syncing civicrm phone locations, using saved data.', 'warning');
+      }
     }
   }
   $results = variable_get('spcivisync_phone_locations', 'FALSE');
@@ -557,7 +571,9 @@ function spcivisync_get_civi_phone_types($sync = TRUE) {
       return $results;
     }
     else {
-      drupal_set_message('Error syncing civicrm phone types, using saved data.', 'warning');
+      if (spcivisync_show_message()) {
+        drupal_set_message('Error syncing civicrm phone types, using saved data.', 'warning');
+      }
     }
   }
   $results = variable_get('spcivisync_phone_types', 'FALSE');
@@ -583,7 +599,9 @@ function spcivisync_get_civi_address_locations($sync = TRUE) {
       return $results;
     }
     else {
-      drupal_set_message('Error syncing civicrm address locations, using saved data.', 'warning');
+      if (spcivisync_show_message()) {
+        drupal_set_message('Error syncing civicrm address locations, using saved data.', 'warning');
+      }
     }
   }
   $results = variable_get('spcivisync_address_locations', 'FALSE');
@@ -613,7 +631,9 @@ function spcivisync_get_civi_address_fields($sync = TRUE) {
       return $results;
     }
     else {
-      drupal_set_message('Error syncing civicrm address fields, using saved data.', 'warning');
+      if (spcivisync_show_message()) {
+        drupal_set_message('Error syncing civicrm address fields, using saved data.', 'warning');
+      }
     }
   }
   $results = variable_get('spcivisync_address_fields', 'FALSE');
@@ -711,12 +731,16 @@ function spcivisync_sync_simple_field($users, $rule, $civiapi, $test = FALSE, $d
         }
         else {
           spcivisync_set_account_field_value($user, $drupal_field, '', $test, $drush_log);
-          drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $drupal_field)), 'error');
+          if (spcivisync_show_message()) {
+            drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $drupal_field)), 'error');
+          }
         }
       }
       else {
         spcivisync_set_account_field_value($user, $drupal_field, '', $test, $drush_log);
-        drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $drupal_field)), 'error');
+        if (spcivisync_show_message()) {
+          drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $drupal_field)), 'error');
+        }
       }
     }
     else {
@@ -733,7 +757,9 @@ function spcivisync_sync_simple_field($users, $rule, $civiapi, $test = FALSE, $d
       }
       else {
         spcivisync_set_account_field_value($user, $drupal_field, '', $test, $drush_log);
-        drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $drupal_field)), 'error');
+        if (spcivisync_show_message()) {
+          drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $drupal_field)), 'error');
+        }
       }
     }
   }
@@ -768,7 +794,9 @@ function spcivisync_sync_email_field($users, $rule, $civiapi, $test = FALSE, $dr
     }
     else {
       spcivisync_set_account_field_value($user, $rule['drupal_field'], '', $test, $drush_log);
-      drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $rule['drupal_field'])), 'error');
+      if (spcivisync_show_message()) {
+        drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $rule['drupal_field'])), 'error');
+      }
     }
   }
 }
@@ -803,7 +831,9 @@ function spcivisync_sync_phone_field($users, $rule, $civiapi, $test = FALSE, $dr
     }
     else {
       spcivisync_set_account_field_value($user, $rule['drupal_field'], '', $test, $drush_log);
-      drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $rule['drupal_field'])), 'error');
+      if (spcivisync_show_message()) {
+        drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $rule['drupal_field'])), 'error');
+      }
     }
   }
 }
@@ -837,7 +867,9 @@ function spcivisync_sync_address_field($users, $rule, $civiapi, $test = FALSE, $
     }
     else {
       spcivisync_set_account_field_value($user, $rule['drupal_field'], '', $test, $drush_log);
-      drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $rule['drupal_field'])), 'error');
+      if (spcivisync_show_message()) {
+        drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $rule['drupal_field'])), 'error');
+      }
     }
   }
 }
@@ -914,7 +946,9 @@ function spcivisync_set_account_field_value($user, $fieldname, $value, $test = F
     }
     else {
       $drupal_fields = spcivisync_get_account_fields();
-      drupal_set_message('Veld: ' . $drupal_fields[$fieldname] . '<br/>Waarde: ' . $value);
+      if (spcivisync_show_message()) {
+        drupal_set_message('Veld: ' . $drupal_fields[$fieldname] . '<br/>Waarde: ' . $value);
+      }
     }
     break;
   case 'integer':
@@ -925,11 +959,15 @@ function spcivisync_set_account_field_value($user, $fieldname, $value, $test = F
       }
       else {
         $drupal_fields = spcivisync_get_account_fields();
-        drupal_set_message('Veld: ' . $drupal_fields[$fieldname] . '<br/>Waarde: ' . $value);
+        if (spcivisync_show_message()) {
+          drupal_set_message('Veld: ' . $drupal_fields[$fieldname] . '<br/>Waarde: ' . $value);
+        }
       }
     }
     else {
-      drupal_set_message('Het is niet mogelijk om de waarde "' . $value . '" op te slaan in een integer veld.', 'error');
+      if (spcivisync_show_message()) {
+        drupal_set_message('Het is niet mogelijk om de waarde "' . $value . '" op te slaan in een integer veld.', 'error');
+      }
     }
     break;
   case 'date':
@@ -940,15 +978,21 @@ function spcivisync_set_account_field_value($user, $fieldname, $value, $test = F
       }
       else {
         $drupal_fields = spcivisync_get_account_fields();
-        drupal_set_message('Veld: ' . $drupal_fields[$fieldname] . '<br/>Waarde: ' . $value . ' omgezet naar ' . strtotime($value) . ' (timestamp)');
+        if (spcivisync_show_message()) {
+          drupal_set_message('Veld: ' . $drupal_fields[$fieldname] . '<br/>Waarde: ' . $value . ' omgezet naar ' . strtotime($value) . ' (timestamp)');
+        }
       }
     }
     else {
-      drupal_set_message('Het is niet mogelijk om de waarde "' . $value . '" te converteren met strtotime() naar een timestamp.', 'error');
+      if (spcivisync_show_message()) {
+        drupal_set_message('Het is niet mogelijk om de waarde "' . $value . '" te converteren met strtotime() naar een timestamp.', 'error');
+      }
     }
     break;
   default :
+    if (spcivisync_show_message()) {
       drupal_set_message('Helaas, het Drupal veldtype "' . $info['type']  . '" van het veld "' . $fieldname . '" wordt nog niet ondersteund.', 'error');
+    }
   }
 }
 
@@ -962,4 +1006,15 @@ function spcivisync_get_roles_to_sync() {
     $roles = $roles + $values['drupal_roles'];
   }
   return $roles;
+}
+
+function spcivisync_show_message() {
+  $path = current_path();
+  $path_alias = drupal_lookup_path('alias', $path);
+  $patterns = 'admin/config/sp/spcivisync*';
+
+  if (drupal_match_path($path, $patterns) || drupal_match_path($path_alias, $patterns)) {
+    return TRUE;
+  }
+  return FALSE;
 }
