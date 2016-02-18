@@ -451,18 +451,21 @@ function spcivisync_admin_add_relation_field_rules_submit($form, &$form_state) {
     'drupal_field' => $values['drupal_field'],
   );
   // Controleer of regel reeds bestaat.
-  $duplicates = 0;
-  foreach ($new_rules['relation-field'] as $rule_a) {
-    foreach ($new_rules['relation-field'] as $rule_b) {
+  $duplicates = array();
+  foreach ($new_rules['relation-field'] as $key_a => $rule_a) {
+    $duplicates[$key_a] = 0;
+    foreach ($new_rules['relation-field'] as $key_b => $rule_b) {
       if ($rule_a === $rule_b) {
-        $duplicates ++;
+        $duplicates[$key_a] ++;
+        foreach ($duplicates as $number) {
+          if ($number > 1) {
+            // Regel bestaat reeds.
+            drupal_set_message('Regel bestaat al, er is geen nieuwe regel toegevoegd.', 'error');
+            return;
+          }
+        }
       }
     }
-  }
-  if ($duplicates > 1) {
-    // Regel bestaat reeds.
-    drupal_set_message('Regel bestaat al, er is geen nieuwe regel toegevoegd.', 'error');
-    return;
   }
 
   // Nieuwe regel.

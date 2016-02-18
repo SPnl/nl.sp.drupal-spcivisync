@@ -884,30 +884,34 @@ function spcivisync_sync_relation_field($users, $rule, $civiapi, $test = FALSE, 
     $query = array(
       'relationship_type_id' => $relationship_id,
       'contact_id_a' => $user->name,
+      'is_active' => 1,
       'return' => 'contact_id_b',
     );
 
     // Set plain field value.
-    $civiapi->Relationship->GetSingle($query);
+    $civiapi->Relationship->Get($query);
     $results = $civiapi->result();
 
-    if ($results->is_error) {
+    if ($results->is_error || empty($results->values)) {
       // Relationship doesn't exist.
       spcivisync_set_account_field_value($user, $rule['drupal_field'], '', $test, $drush_log);
     }
     else {
-      $region_id = $results->contact_id_b;
-      // Get contact display name.
-      $query = array(
-        'contact_id' => $region_id,
-        'return' => 'display_name',
-      );
-      $civiapi->Contact->GetSingle($query);
-      $results = $civiapi->result();
-      if (!empty($results->display_name)) {
-        $region_name = str_replace(array('SP-regio '), '', $results->display_name);
-        spcivisync_set_account_field_value($user, $rule['drupal_field'], $region_name, $test, $drush_log);
+      $value = array();
+      foreach ($results->values as $result) {
+        $relation_contact_id = $result->contact_id_b;
+        // Get contact display name.
+        $query = array(
+          'id' => $relation_contact_id,
+          'return' => 'display_name',
+        );
+        $civiapi->Contact->GetSingle($query);
+        $rel_result = $civiapi->result();
+        if (!empty($rel_result->display_name)) {
+          $value[] = $rel_result->display_name;
+        }
       }
+      spcivisync_set_account_field_value($user, $rule['drupal_field'], $value, $test, $drush_log);
     }
   }
 }
@@ -937,21 +941,28 @@ function spcivisync_set_account_field_value($user, $fieldname, $value, $test = F
     drush_log('Syncing: '.$user->name.' ('.$fieldname.')', 'ok');
   }
   $user_wrapper = entity_metadata_wrapper('user', $user);
-  $info = $user_wrapper->$fieldname->info();
+  $info = field_info_field($fieldname);
   switch ($info['type']) {
   case 'text':
+    if ($info['cardinality'] === '1' && is_array($value)) {
+      $value = array_shift($value);
+    }
+    if ($info['cardinality'] === '-1' && is_string($value)) {
+      $value = array($value);
+    }
     $user_wrapper->$fieldname->set($value);
     if (!$test) {
       $user_wrapper->save();
     }
     else {
-      $drupal_fields = spcivisync_get_account_fields();
       if (spcivisync_show_message()) {
-        drupal_set_message('Veld: ' . $drupal_fields[$fieldname] . '<br/>Waarde: ' . $value);
+        $drupal_fields = spcivisync_get_account_fields();
+        $output = is_array($value) ? implode(',', $value) : $value;
+        drupal_set_message('Veld: ' . $drupal_fields[$fieldname] . '<br/>Waarde: ' . $output);
       }
     }
     break;
-  case 'integer':
+  case 'number_integer':
     if (filter_var($value, FILTER_VALIDATE_INT)) {
       $user_wrapper->$fieldname->set($value);
       if (!$test) {
