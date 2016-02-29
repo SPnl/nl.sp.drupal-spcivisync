@@ -155,7 +155,7 @@ function spcivisync_get_civi_relationships($sync = TRUE) {
       return $relationships;
     }
     else {
-      if (spcivisyn_show_message()) {
+      if (spcivisync_show_message()) {
         drupal_set_message('Error syncing civicrm relationship types, using saved data.', 'warning');
       }
     }
@@ -189,7 +189,7 @@ function spcivisync_get_civi_groups($sync = TRUE) {
       return $groups;
     }
     else {
-      if (spcivisyn_show_message()) {
+      if (spcivisync_show_message()) {
         drupal_set_message('Error syncing civicrm relationship types, using saved data.', 'warning');
       }
     }
