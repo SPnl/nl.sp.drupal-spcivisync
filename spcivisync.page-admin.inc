@@ -143,22 +143,29 @@ function spcivisync_admin_add_relation_role_rules_submit($form, &$form_state) {
   drupal_set_message('Regel is opgeslagen.');
 }
 
+function spcivisync_set_field_options($options){
+  if(is_array($options)) {
+    return $options;
+  } else {
+    return null;
+  }
+}
+
 function spcivisync_admin_add_field_field_rules($form, &$form_state) {
   $form = array();
   $form['fields'] = array(
     '#type' => 'fieldset', 
-    '#title' => 'CiviCRM velden -> Drupal velden',
+    '#title' => t('CiviCRM fields &rarr; Drupal fields'),
   );
   $form['fields']['civi_contact_simple_fields'] = array(
     '#type' => 'fieldset', 
     '#prefix' => '<h1>Synchronizeer:</h1><h4>eenvoudig veld</h4>',
   );
 
-  $civi_fields = spcivisync_get_civi_contact_fields();
-  $civi_fields = array('0' => 'Selecteer Civi veld:') + $civi_fields;
   $form['fields']['civi_contact_simple_fields']['civi_contact_simple_field'] = array(
     '#type' => 'select',
-    '#options' => $civi_fields,
+    '#empty_option' => t('-Select-'),
+    '#options' => spcivisync_get_civi_contact_fields(),
   );
 
   $form['fields']['civi_contact_email_fields'] = array(
@@ -172,11 +179,10 @@ function spcivisync_admin_add_field_field_rules($form, &$form_state) {
     '#suffix' => 'of',
   );
 
-  $civi_email_location_fields = spcivisync_get_civi_email_locations();
-  $civi_email_location_fields = array('0' => 'Selecteer locatie:') + $civi_email_location_fields;
   $form['fields']['civi_contact_email_fields']['civi_contact_email_location_field'] = array(
     '#type' => 'select',
-    '#options' => $civi_email_location_fields,
+    '#empty_option' => t('-Select-'),
+    '#options' => spcivisync_get_civi_email_locations(),
   );
 
   $form['fields']['civi_contact_phone_fields'] = array(
@@ -190,17 +196,16 @@ function spcivisync_admin_add_field_field_rules($form, &$form_state) {
     '#suffix' => 'of',
   );
 
-  $civi_phone_location_fields = spcivisync_get_civi_phone_locations();
-  $civi_phone_location_fields = array('0' => 'Selecteer locatie:') + $civi_phone_location_fields;
   $form['fields']['civi_contact_phone_fields']['civi_contact_phone_location_field'] = array(
     '#type' => 'select',
-    '#options' => $civi_phone_location_fields,
+    '#empty_option' => t('-Select-'),
+    '#options' => spcivisync_get_civi_phone_locations(),
   );
-  $civi_phone_type_fields = spcivisync_get_civi_phone_types();
-  $civi_phone_type_fields = array('0' => 'Selecteer type:') + $civi_phone_type_fields;
+
   $form['fields']['civi_contact_phone_fields']['civi_contact_phone_type_field'] = array(
     '#type' => 'select',
-    '#options' => $civi_phone_type_fields,
+     '#empty_option' => t('-Select phone type-'),
+     '#options' => spcivisync_get_civi_phone_types(),
   );
 
   $form['fields']['civi_contact_address_fields'] = array(
@@ -214,18 +219,17 @@ function spcivisync_admin_add_field_field_rules($form, &$form_state) {
     '#suffix' => 'of',
   );
 
-  $civi_address_location_fields = spcivisync_get_civi_address_locations();
-  $civi_address_location_fields = array('0' => 'Selecteer locatie:') + $civi_address_location_fields;
   $form['fields']['civi_contact_address_fields']['civi_contact_address_location_field'] = array(
     '#type' => 'select',
     '#title' => 'Selecteer type',
-    '#options' => $civi_address_location_fields,
+    '#empty_option' => t('-Select location field-'),
+    '#options' => spcivisync_get_civi_address_locations(),
   );
-  $civi_address_fields = spcivisync_get_civi_address_fields();
-  $civi_address_fields = array('0' => 'Selecteer adres veld:') + $civi_address_fields;
+
   $form['fields']['civi_contact_address_fields']['civi_contact_address_field'] = array(
     '#type' => 'select',
-    '#options' => $civi_address_fields,
+    '#empty_option' => t('-Select adress field-'),
+    '#options' => spcivisync_get_civi_address_fields(),
   );
 
   $drupal_fields = spcivisync_get_account_fields();
@@ -571,6 +575,7 @@ function spcivisync_admin_list_rules() {
 
 function spcivisync_admin_test_rules($form, &$form_state) {
   $form = array();
+  $options = array();
   $users = spcivisync_get_users();
   foreach ($users as $user) {
     $options[$user->uid] = $user->name;

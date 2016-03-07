@@ -207,40 +207,43 @@ function spcivisync_sync_roles($users = array(), $test = FALSE, $drush_log = FAL
   // Settings and variables.
   $rules = variable_get('spcivisync_rules');
 
-  // Create mapping group to roles.
-  foreach ($rules['groups-roles'] as $key => $rule_values) {
-    foreach ($rule_values['civi_groups'] as $group_id => $group_name) {
-      foreach ($rule_values['drupal_roles'] as $role_id => $role_name) {
-        $mapping['groups'][$group_id][$role_id] = $role_id;
-      }
-    }
-  }
-
-  // Create mapping civi group users to drupal roles.
   $users_roles = array();
   $roles_users = array();
-  if (isset($mapping['groups'])) {
-    foreach ($mapping['groups'] as $group_id => $roles) {
-      // Get users in group.
-      $query = array(
-        'sequential' => 1,
-        'option.limit' => 9999,
-        'return' => 'id',
-        'group' => $group_id,
-        'is_active' => 1,
-      );
-      if (count($users) == 1) {
-        $query['id'] = $users[0]->name;
+  if (!empty($rules['groups-roles'])) {
+
+    // Create mapping group to roles.
+    foreach ($rules['groups-roles'] as $key => $rule_values) {
+      foreach ($rule_values['civi_groups'] as $group_id => $group_name) {
+        foreach ($rule_values['drupal_roles'] as $role_id => $role_name) {
+          $mapping['groups'][$group_id][$role_id] = $role_id;
+        }
       }
-      $civiapi->Contact->Get($query);
-      $results = $civiapi->result();
-      if (isset($results->values)) {
-        foreach ($results->values as $contact) {
-          foreach ($roles as $role) {
-            if (isset($contact->contact_id)) {
-              if (filter_var($contact->contact_id, FILTER_VALIDATE_INT) !== FALSE) {
-                $users_roles[$contact->contact_id][$role] = $role;
-                $roles_users[$role][$contact->contact_id] = $contact->contact_id;
+    }
+
+    // Create mapping civi group users to drupal roles.
+    if (isset($mapping['groups'])) {
+      foreach ($mapping['groups'] as $group_id => $roles) {
+        // Get users in group.
+        $query = array(
+          'sequential' => 1,
+          'option.limit' => 9999,
+          'return' => 'id',
+          'group' => $group_id,
+          'is_active' => 1,
+        );
+        if (count($users) == 1) {
+          $query['id'] = $users[0]->name;
+        }
+        $civiapi->Contact->Get($query);
+        $results = $civiapi->result();
+        if (isset($results->values)) {
+          foreach ($results->values as $contact) {
+            foreach ($roles as $role) {
+              if (isset($contact->contact_id)) {
+                if (filter_var($contact->contact_id, FILTER_VALIDATE_INT) !== FALSE) {
+                  $users_roles[$contact->contact_id][$role] = $role;
+                  $roles_users[$role][$contact->contact_id] = $contact->contact_id;
+                }
               }
             }
           }
@@ -249,37 +252,39 @@ function spcivisync_sync_roles($users = array(), $test = FALSE, $drush_log = FAL
     }
   }
 
-  // Create mapping relation to roles.
-  foreach ($rules['relations-roles'] as $key => $rule_values) {
-    foreach ($rule_values['civi_relations'] as $relation_id => $relation_name) {
-      foreach ($rule_values['drupal_roles'] as $role_id => $role_name) {
-        $mapping['relations'][$relation_id][$role_id] = $role_id;
+  if (!empty($rules['relations-roles'])) {
+    // Create mapping relation to roles.
+    foreach ($rules['relations-roles'] as $key => $rule_values) {
+      foreach ($rule_values['civi_relations'] as $relation_id => $relation_name) {
+        foreach ($rule_values['drupal_roles'] as $role_id => $role_name) {
+          $mapping['relations'][$relation_id][$role_id] = $role_id;
+        }
       }
     }
-  }
 
-  // Add mapping civi relation users to drupal roles.
-  if (isset($mapping['relations'])) {
-    foreach ($mapping['relations'] as $relation_id => $roles) {
-      // Get users in group.
-      $query = array(
-        'sequential' => 1,
-        'option.limit' => 9999,
-        'relationship_type_id' => $relation_id,
-        'is_active' => 1,
-      );
-      if (count($users) == 1) {
-        $query['contact_id'] = $users[0]->name;
-      }
-      $civiapi->Relationship->Get($query);
-      $results = $civiapi->result();
-      if (isset($results->values)) {
-        foreach ($results->values as $contact) {
-          foreach ($roles as $role) {
-            if (isset($contact->contact_id_a)) {
-              if (filter_var($contact->contact_id_a, FILTER_VALIDATE_INT) !== FALSE) {
-                $users_roles[$contact->contact_id_a][$role] = $role;
-                $roles_users[$role][$contact->contact_id_a] = $contact->contact_id_a;
+    // Add mapping civi relation users to drupal roles.
+    if (isset($mapping['relations'])) {
+      foreach ($mapping['relations'] as $relation_id => $roles) {
+        // Get users in group.
+        $query = array(
+          'sequential' => 1,
+          'option.limit' => 9999,
+          'relationship_type_id' => $relation_id,
+          'is_active' => 1,
+        );
+        if (count($users) == 1) {
+          $query['contact_id'] = $users[0]->name;
+        }
+        $civiapi->Relationship->Get($query);
+        $results = $civiapi->result();
+        if (isset($results->values)) {
+          foreach ($results->values as $contact) {
+            foreach ($roles as $role) {
+              if (isset($contact->contact_id_a)) {
+                if (filter_var($contact->contact_id_a, FILTER_VALIDATE_INT) !== FALSE) {
+                  $users_roles[$contact->contact_id_a][$role] = $role;
+                  $roles_users[$role][$contact->contact_id_a] = $contact->contact_id_a;
+                }
               }
             }
           }
@@ -1010,11 +1015,15 @@ function spcivisync_set_account_field_value($user, $fieldname, $value, $test = F
 function spcivisync_get_roles_to_sync() {
   $roles = array();
   $rules = variable_get('spcivisync_rules');
-  foreach ($rules['relations-roles'] as $values) {
-    $roles = $roles + $values['drupal_roles'];
+  if (!empty($rules['relations-roles'])) {
+    foreach ($rules['relations-roles'] as $values) {
+      $roles = $roles + $values['drupal_roles'];
+    }
   }
-  foreach ($rules['groups-roles'] as $values) {
-    $roles = $roles + $values['drupal_roles'];
+  if (!empty($rules['groups-roles'])) {
+    foreach ($rules['groups-roles'] as $values) {
+      $roles = $roles + $values['drupal_roles'];
+    }
   }
   return $roles;
 }
