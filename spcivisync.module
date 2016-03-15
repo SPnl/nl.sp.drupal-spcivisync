@@ -9,7 +9,7 @@ function spcivisync_menu() {
   $items = array();
 
   $items['admin/config/sp/spcivisync/sync/%'] = array(
-    'title'            => 'SP CiviCRM synchronizatie uitvoeren',
+    'title'            => 'SP CiviCRM-synchronisatie uitvoeren',
     'type'             => MENU_CALLBACK,
     'page callback'    => 'spcivisync_menu_sync',
     'page arguments'   => array(5),
@@ -18,7 +18,7 @@ function spcivisync_menu() {
 
   $items['admin/config/sp/spcivisync'] = array(
     'title'            => 'SP Civicrm synchronizatie',
-    'description'      => 'Instellingen voor SP CiviCRM synchronizatie.',
+    'description'      => 'Instellingen voor SP CiviCRM-synchronisatie.',
     'type'             => MENU_NORMAL_ITEM,
     'page callback'    => 'spcivisync_admin_list_rules',
     'file'             => 'spcivisync.page-admin.inc',

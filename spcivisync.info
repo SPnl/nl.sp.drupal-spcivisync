@@ -1,4 +1,4 @@
-name = SP CiviCRM synchronizatie
+name = SP CiviCRM-synchronisatie
 description = Sync CiviCRM relations and fields with drupal roles and fields.
 version = 1.0
 core = 7.x
