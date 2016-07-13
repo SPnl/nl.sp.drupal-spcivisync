@@ -1038,3 +1038,7 @@ function spcivisync_show_message() {
   }
   return FALSE;
 }
+
+function spcivisync_entity_info_alter(&$info) {
+  $info['user']['field cache'] = FALSE;
+}
