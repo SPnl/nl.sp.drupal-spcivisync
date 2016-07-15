@@ -13,7 +13,7 @@ function spcivisync_menu() {
     'type'             => MENU_CALLBACK,
     'page callback'    => 'spcivisync_menu_sync',
     'page arguments'   => array(5),
-    'access callback' => sprbs_access_check(),
+    'access callback' => 'sprbs_access_check',
   );
 
   $items['admin/config/sp/spcivisync'] = array(
@@ -22,14 +22,14 @@ function spcivisync_menu() {
     'type'             => MENU_NORMAL_ITEM,
     'page callback'    => 'spcivisync_admin_list_rules',
     'file'             => 'spcivisync.page-admin.inc',
-    'access callback' => sprbs_access_check(),
+    'access callback' => 'sprbs_access_check',
   );
 
   $items['admin/config/sp/spcivisync/list-rules'] = array(
     'title'            => 'Overzicht regels',
     'type'             => MENU_DEFAULT_LOCAL_TASK,
     'weight'           => 0,
-    'access callback' => sprbs_access_check(),
+    'access callback' => 'sprbs_access_check',
   );
 
   $items['admin/config/sp/spcivisync/add-relation-role-rule'] = array(
@@ -39,7 +39,7 @@ function spcivisync_menu() {
     'page callback'    => 'drupal_get_form',
     'page arguments'   => array('spcivisync_admin_add_relation_role_rules'),
     'file'             => 'spcivisync.page-admin.inc',
-    'access callback' => sprbs_access_check(),
+    'access callback' => 'sprbs_access_check',
   );
 
   $items['admin/config/sp/spcivisync/add-group-role-rule'] = array(
@@ -49,7 +49,7 @@ function spcivisync_menu() {
     'page callback'    => 'drupal_get_form',
     'page arguments'   => array('spcivisync_admin_add_group_role_rules'),
     'file'             => 'spcivisync.page-admin.inc',
-    'access callback' => sprbs_access_check(),
+    'access callback' => 'sprbs_access_check',
   );
 
   $items['admin/config/sp/spcivisync/add-field-field-rule'] = array(
@@ -59,7 +59,7 @@ function spcivisync_menu() {
     'page callback'    => 'drupal_get_form',
     'page arguments'   => array('spcivisync_admin_add_field_field_rules'),
     'file'             => 'spcivisync.page-admin.inc',
-    'access callback' => sprbs_access_check(),
+    'access callback' => 'sprbs_access_check',
   );
 
   $items['admin/config/sp/spcivisync/add-relation-field-rule'] = array(
@@ -69,7 +69,7 @@ function spcivisync_menu() {
     'page callback'    => 'drupal_get_form',
     'page arguments'   => array('spcivisync_admin_add_relation_field_rules'),
     'file'             => 'spcivisync.page-admin.inc',
-    'access callback' => sprbs_access_check(),
+    'access callback' => 'sprbs_access_check',
   );
 
   $items['admin/config/sp/spcivisync/test-rule'] = array(
@@ -79,7 +79,7 @@ function spcivisync_menu() {
     'page callback'    => 'drupal_get_form',
     'page arguments'   => array('spcivisync_admin_test_rules'),
     'file'             => 'spcivisync.page-admin.inc',
-    'access callback' => sprbs_access_check(),
+    'access callback' => 'sprbs_access_check',
   );
 
   $items['admin/config/sp/spcivisync/sync'] = array(
@@ -88,7 +88,7 @@ function spcivisync_menu() {
     'weight'           => 5,
     'page callback'    => 'spcivisync_admin_sync',
     'file'             => 'spcivisync.page-admin.inc',
-    'access callback' => sprbs_access_check(),
+    'access callback' => 'sprbs_access_check',
   );
 
   $items['admin/config/sp/spcivisync/delete/%/%'] = array(
@@ -96,7 +96,7 @@ function spcivisync_menu() {
     'page arguments' => array(5,6),
     'type'             => MENU_CALLBACK,
     'file'             => 'spcivisync.page-admin.inc',
-    'access callback' => sprbs_access_check(),
+    'access callback' => 'sprbs_access_check',
   );
   return $items;
 }
