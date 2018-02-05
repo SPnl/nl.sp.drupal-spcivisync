@@ -173,16 +173,12 @@ function spcivisync_get_civi_groups($sync = TRUE) {
     $civiapi->Group->Get(array(
       'sequential'            => 1,
       'option.limit'          => 9999,
+      'group_type' => array('!=' => "Mailing List"),
     ));
     $groups_results = $civiapi->result();
     if (isset($groups_results->values)) {
       foreach ($groups_results->values as $value) {
-        if (
-          empty($value->group_type) ||
-          in_array('1', $value->group_type)
-        ) {
-          $groups[$value->id] = $value->title;
-        }
+        $groups[$value->id] = $value->title;
       }
       asort($groups);
       variable_set('spcivisync_groups', $groups);
@@ -302,7 +298,7 @@ function spcivisync_sync_roles($users = array(), $test = FALSE, $drush_log = FAL
     drupal_set_message('<strong>Synchronizatie CiviCRM groepen en relaties met Drupal rollen.</strong>');
   }
   foreach ($users_roles as $username => $roles) {
-    if($drush_log) { 
+    if($drush_log) {
       drush_log('Syncing: '.$username.' (roles)', 'ok');
     }
     // Check if user exists.
@@ -333,7 +329,7 @@ function spcivisync_sync_roles($users = array(), $test = FALSE, $drush_log = FAL
 
         if (!$user) {
           if (spcivisync_show_message()) {
-            drupal_set_message('Het is niet gelukt een account voor u aan te maken op deze website.', 'error');   
+            drupal_set_message('Het is niet gelukt een account voor u aan te maken op deze website.', 'error');
           }
         }
       }
@@ -461,7 +457,7 @@ function spcivisync_check_date($civi_relationship) {
   if (
     (empty($civi_relationship->start_date) ||
     $civi_relationship->start_date <= $date_formatted) &&
-    (empty($civi_relationship->end_date) || 
+    (empty($civi_relationship->end_date) ||
     $civi_relationship->end_date > $date_formatted)
   ) {
     return TRUE;
@@ -942,7 +938,7 @@ function spcivisync_get_users() {
 }
 
 function spcivisync_set_account_field_value($user, $fieldname, $value, $test = FALSE, $drush_log = FALSE) {
-  if($drush_log) { 
+  if($drush_log) {
     drush_log('Syncing: '.$user->name.' ('.$fieldname.')', 'ok');
   }
   $user_wrapper = entity_metadata_wrapper('user', $user);
