@@ -173,14 +173,13 @@ function spcivisync_get_civi_groups($sync = TRUE) {
     $civiapi->Group->Get(array(
       'sequential'            => 1,
       'option.limit'          => 9999,
-      'group_type' => array('!=' => "Mailing List"),
     ));
     $groups_results = $civiapi->result();
     if (isset($groups_results->values)) {
       foreach ($groups_results->values as $value) {
         $groups[$value->id] = $value->title;
       }
-      asort($groups);
+      natcasesort($groups);
       variable_set('spcivisync_groups', $groups);
       return $groups;
     }
@@ -204,41 +203,40 @@ function spcivisync_sync_roles($users = array(), $test = FALSE, $drush_log = FAL
   $rules = variable_get('spcivisync_rules');
 
   $users_roles = array();
-  $roles_users = array();
   if (!empty($rules['groups-roles'])) {
 
-    // Create mapping group to roles.
+    // Create mapping roles to groups.
     foreach ($rules['groups-roles'] as $key => $rule_values) {
       foreach ($rule_values['civi_groups'] as $group_id => $group_name) {
         foreach ($rule_values['drupal_roles'] as $role_id => $role_name) {
-          $mapping['groups'][$group_id][$role_id] = $role_id;
+          $mapping['roles_groups'][$role_id][$group_id] = $group_id;
         }
       }
     }
 
     // Create mapping civi group users to drupal roles.
-    if (isset($mapping['groups'])) {
-      foreach ($mapping['groups'] as $group_id => $roles) {
-        // Get users in group.
-        $query = array(
-          'sequential' => 1,
-          'option.limit' => 9999,
-          'return' => 'id',
-          'group' => $group_id,
-          'is_active' => 1,
-        );
-        if (count($users) == 1) {
-          $query['id'] = $users[0]->name;
-        }
-        $civiapi->Contact->Get($query);
-        $results = $civiapi->result();
-        if (isset($results->values)) {
-          foreach ($results->values as $contact) {
-            foreach ($roles as $role) {
+    if (isset($mapping['roles_groups'])) {
+      foreach ($mapping['roles_groups'] as $role_id => $groups) {
+        sort($groups);
+        foreach ($groups as $group_id) {
+          // Get users in group.
+          $query = array(
+            'sequential' => 1,
+            'option.limit' => 9999,
+            'return' => 'id',
+            'group' => $group_id,
+            'is_active' => 1,
+          );
+          if (count($users) == 1) {
+            $query['id'] = $users[0]->name;
+          }
+          $civiapi->Contact->Get($query);
+          $results = $civiapi->result();
+          if (isset($results->values)) {
+            foreach ($results->values as $contact) {
               if (isset($contact->contact_id)) {
                 if (filter_var($contact->contact_id, FILTER_VALIDATE_INT) !== FALSE) {
-                  $users_roles[$contact->contact_id][$role] = $role;
-                  $roles_users[$role][$contact->contact_id] = $contact->contact_id;
+                  $users_roles[$contact->contact_id][$role_id] = $role_id;
                 }
               }
             }
@@ -253,19 +251,19 @@ function spcivisync_sync_roles($users = array(), $test = FALSE, $drush_log = FAL
     foreach ($rules['relations-roles'] as $key => $rule_values) {
       foreach ($rule_values['civi_relations'] as $relation_id => $relation_name) {
         foreach ($rule_values['drupal_roles'] as $role_id => $role_name) {
-          $mapping['relations'][$relation_id][$role_id] = $role_id;
+          $mapping['roles_relations'][$role_id][$relation_id] = $relation_id;
         }
       }
     }
 
     // Add mapping civi relation users to drupal roles.
-    if (isset($mapping['relations'])) {
-      foreach ($mapping['relations'] as $relation_id => $roles) {
+    if (isset($mapping['roles_relations'])) {
+      foreach ($mapping['roles_relations'] as $role_id => $relations) {
         // Get users in group.
         $query = array(
           'sequential' => 1,
           'option.limit' => 9999,
-          'relationship_type_id' => $relation_id,
+          'relationship_type_id' => array('IN' => $relations),
           'is_active' => 1,
         );
         if (count($users) == 1) {
@@ -274,13 +272,10 @@ function spcivisync_sync_roles($users = array(), $test = FALSE, $drush_log = FAL
         $civiapi->Relationship->Get($query);
         $results = $civiapi->result();
         if (isset($results->values)) {
-          foreach ($results->values as $contact) {
-            foreach ($roles as $role) {
-              if (isset($contact->contact_id_a)) {
-                if (filter_var($contact->contact_id_a, FILTER_VALIDATE_INT) !== FALSE) {
-                  $users_roles[$contact->contact_id_a][$role] = $role;
-                  $roles_users[$role][$contact->contact_id_a] = $contact->contact_id_a;
-                }
+          foreach ($results->values as $relationship) {
+            if (isset($relationship->contact_id_a)) {
+              if (filter_var($relationship->contact_id_a, FILTER_VALIDATE_INT) !== FALSE) {
+                $users_roles[$relationship->contact_id_a][$role_id] = $role_id;
               }
             }
           }
@@ -298,8 +293,8 @@ function spcivisync_sync_roles($users = array(), $test = FALSE, $drush_log = FAL
     drupal_set_message('<strong>Synchronizatie CiviCRM groepen en relaties met Drupal rollen.</strong>');
   }
   foreach ($users_roles as $username => $roles) {
-    if($drush_log) {
-      drush_log('Syncing: '.$username.' (roles)', 'ok');
+    if ($drush_log) {
+      drush_log('Syncing: ' . $username . ' (roles)', 'ok');
     }
     // Check if user exists.
     $user = user_load_by_name($username);
@@ -311,7 +306,7 @@ function spcivisync_sync_roles($users = array(), $test = FALSE, $drush_log = FAL
         // Create user.
         $password = $username . user_password(4);
 
-        //set up the user fields
+        // Set up the user fields.
         $fields = array(
           'name' => $username,
           'mail' => $username . '@spnet.nl',
@@ -321,8 +316,8 @@ function spcivisync_sync_roles($users = array(), $test = FALSE, $drush_log = FAL
           'roles' => array(),
         );
         $user = user_save('', $fields);
-        // Create authmap record
-        if(!user_get_authmaps("spoauth_".$username)) {
+        // Create authmap record.
+        if (!user_get_authmaps("spoauth_" . $username)) {
           $authname = 'spoauth_' . $username;
           user_set_authmaps($user, array('authname_spoauthconsumer' => $authname));
         }
@@ -358,7 +353,7 @@ function spcivisync_sync_roles($users = array(), $test = FALSE, $drush_log = FAL
         }
       }
       // Set sync roles.
-      foreach($roles as $role_id) {
+      foreach ($roles as $role_id) {
         if ($test) {
           drupal_set_message('Set role "' . $roles_to_set[$role_id] . '"');
         }
@@ -382,7 +377,7 @@ function spcivisync_sync_roles($users = array(), $test = FALSE, $drush_log = FAL
     $drupal_users = spcivisync_get_users();
   }
   foreach ($drupal_users as $drupal_user) {
-    if (!key_exists($drupal_user->name, $users_roles)) {
+    if (!array_key_exists($drupal_user->name, $users_roles)) {
       foreach ($roles_to_set as $rid => $role_name) {
         if (user_has_role($rid, $drupal_user)) {
           $user_roles = $drupal_user->roles;
@@ -450,7 +445,7 @@ function spcivisync_get_user_civi_relations($user) {
 }
 
 function spcivisync_check_date($civi_relationship) {
-  $timezone =  new DateTimeZone(date_default_timezone(FALSE));
+  $timezone = new DateTimeZone(date_default_timezone(FALSE));
   $date = new DateTime('now', $timezone);
   $date_formatted = $date->format('Y-m-d');
   // Check civi relation start and end dates.
@@ -509,7 +504,7 @@ function spcivisync_get_civi_email_locations($sync = TRUE) {
     ));
     $civi_locations_results = $civiapi->result();
     if (isset($civi_locations_results->values)) {
-      foreach($civi_locations_results->values as $value) {
+      foreach ($civi_locations_results->values as $value) {
         $results[$value->key] = $value->value;
       }
       variable_set('spcivisync_email_locations', $results);
@@ -537,7 +532,7 @@ function spcivisync_get_civi_phone_locations($sync = TRUE) {
     ));
     $civi_locations_results = $civiapi->result();
     if (isset($civi_locations_results->values)) {
-      foreach($civi_locations_results->values as $value) {
+      foreach ($civi_locations_results->values as $value) {
         $results[$value->key] = $value->value;
       }
       variable_set('spcivisync_phone_locations', $results);
@@ -565,7 +560,7 @@ function spcivisync_get_civi_phone_types($sync = TRUE) {
     ));
     $civi_types_results = $civiapi->result();
     if (isset($civi_types_results->values)) {
-      foreach($civi_types_results->values as $value) {
+      foreach ($civi_types_results->values as $value) {
         $results[$value->key] = $value->value;
       }
       variable_set('spcivisync_phone_types', $results);
@@ -593,7 +588,7 @@ function spcivisync_get_civi_address_locations($sync = TRUE) {
     ));
     $civi_locations_results = $civiapi->result();
     if (isset($civi_locations_results->values)) {
-      foreach($civi_locations_results->values as $value) {
+      foreach ($civi_locations_results->values as $value) {
         $results[$value->key] = $value->value;
       }
       variable_set('spcivisync_address_locations', $results);
@@ -938,73 +933,76 @@ function spcivisync_get_users() {
 }
 
 function spcivisync_set_account_field_value($user, $fieldname, $value, $test = FALSE, $drush_log = FALSE) {
-  if($drush_log) {
-    drush_log('Syncing: '.$user->name.' ('.$fieldname.')', 'ok');
+  if ($drush_log) {
+    drush_log('Syncing: ' . $user->name . ' (' . $fieldname . ')', 'ok');
   }
   $user_wrapper = entity_metadata_wrapper('user', $user);
   $info = field_info_field($fieldname);
   switch ($info['type']) {
-  case 'text':
-    if ($info['cardinality'] === '1' && is_array($value)) {
-      $value = array_shift($value);
-    }
-    if ($info['cardinality'] === '-1' && is_string($value)) {
-      $value = array($value);
-    }
-    $user_wrapper->$fieldname->set($value);
-    if (!$test) {
-      $user_wrapper->save();
-    }
-    else {
-      if (spcivisync_show_message()) {
-        $drupal_fields = spcivisync_get_account_fields();
-        $output = is_array($value) ? implode(',', $value) : $value;
-        drupal_set_message('Veld: ' . $drupal_fields[$fieldname] . '<br/>Waarde: ' . $output);
+    case 'text':
+      if ($info['cardinality'] === '1' && is_array($value)) {
+        $value = array_shift($value);
       }
-    }
-    break;
-  case 'number_integer':
-    if (filter_var($value, FILTER_VALIDATE_INT)) {
+      if ($info['cardinality'] === '-1' && is_string($value)) {
+        $value = array($value);
+      }
       $user_wrapper->$fieldname->set($value);
       if (!$test) {
         $user_wrapper->save();
       }
       else {
-        $drupal_fields = spcivisync_get_account_fields();
         if (spcivisync_show_message()) {
-          drupal_set_message('Veld: ' . $drupal_fields[$fieldname] . '<br/>Waarde: ' . $value);
+          $drupal_fields = spcivisync_get_account_fields();
+          $output = is_array($value) ? implode(',', $value) : $value;
+          drupal_set_message('Veld: ' . $drupal_fields[$fieldname] . '<br/>Waarde: ' . $output);
         }
       }
-    }
-    else {
-      if (spcivisync_show_message()) {
-        drupal_set_message('Het is niet mogelijk om de waarde "' . $value . '" op te slaan in een integer veld.', 'error');
-      }
-    }
-    break;
-  case 'date':
-    if (strtotime($value)) {
-      $user_wrapper->$fieldname->set(strtotime($value));
-      if (!$test) {
-        $user_wrapper->save();
+      break;
+
+    case 'number_integer':
+      if (filter_var($value, FILTER_VALIDATE_INT)) {
+        $user_wrapper->$fieldname->set($value);
+        if (!$test) {
+          $user_wrapper->save();
+        }
+        else {
+          $drupal_fields = spcivisync_get_account_fields();
+          if (spcivisync_show_message()) {
+            drupal_set_message('Veld: ' . $drupal_fields[$fieldname] . '<br/>Waarde: ' . $value);
+          }
+        }
       }
       else {
-        $drupal_fields = spcivisync_get_account_fields();
         if (spcivisync_show_message()) {
-          drupal_set_message('Veld: ' . $drupal_fields[$fieldname] . '<br/>Waarde: ' . $value . ' omgezet naar ' . strtotime($value) . ' (timestamp)');
+          drupal_set_message('Het is niet mogelijk om de waarde "' . $value . '" op te slaan in een integer veld.', 'error');
         }
       }
-    }
-    else {
-      if (spcivisync_show_message()) {
-        drupal_set_message('Het is niet mogelijk om de waarde "' . $value . '" te converteren met strtotime() naar een timestamp.', 'error');
+      break;
+
+    case 'date':
+      if (strtotime($value)) {
+        $user_wrapper->$fieldname->set(strtotime($value));
+        if (!$test) {
+          $user_wrapper->save();
+        }
+        else {
+          $drupal_fields = spcivisync_get_account_fields();
+          if (spcivisync_show_message()) {
+            drupal_set_message('Veld: ' . $drupal_fields[$fieldname] . '<br/>Waarde: ' . $value . ' omgezet naar ' . strtotime($value) . ' (timestamp)');
+          }
+        }
       }
-    }
-    break;
-  default :
-    if (spcivisync_show_message()) {
-      drupal_set_message('Helaas, het Drupal veldtype "' . $info['type']  . '" van het veld "' . $fieldname . '" wordt nog niet ondersteund.', 'error');
-    }
+      else {
+        if (spcivisync_show_message()) {
+          drupal_set_message('Het is niet mogelijk om de waarde "' . $value . '" te converteren met strtotime() naar een timestamp.', 'error');
+        }
+      }
+      break;
+
+    default:
+      if (spcivisync_show_message()) {
+        drupal_set_message('Helaas, het Drupal veldtype "' . $info['type']  . '" van het veld "' . $fieldname . '" wordt nog niet ondersteund.', 'error');
+      }
   }
 }
 
