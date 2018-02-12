@@ -104,11 +104,7 @@ function spcivisync_menu() {
 function spcivisync_menu_sync($user_id) {
   // Check if all users should be synced.
   if (empty($user_id) || $user_id == 'all') {
-    $users = spcivisync_get_users();
-    spcivisync_sync_roles($users);
-    // Possibly new user, so update.
-    $users = spcivisync_get_users();
-    spcivisync_sync_users($users);
+    spcivisync_sync_users();
   }
   else {
     // Sync single user.
@@ -402,48 +398,6 @@ function spcivisync_get_roles() {
   return $sync_roles;
 }
 
-function spcivisync_get_user_civi_groups($user) {
-  set_time_limit(0);
-
-  // Connect to civiapi.
-  $civiapi     = spciviapi_get_api();
-
-  // Get civicrm relationships for user.
-  $civiapi->GroupContact->Get(array(
-    'sequential' => 1,
-    'option.limit' => 9999,
-    'return' => 'id,is_active',
-    'contact_id' => $user->name,
-    'is_active' => 1,
-  ));
-  $civi_relationships_results = $civiapi->result();
-  if (isset($civi_relationships_results->values)) {
-    return $civi_relationships_results->values;
-  }
-  return FALSE;
-}
-
-function spcivisync_get_user_civi_relations($user) {
-  set_time_limit(0);
-
-  // Connect to civiapi.
-  $civiapi     = spciviapi_get_api();
-
-  // Get civicrm relationships for user.
-  $civiapi->Relationship->Get(array(
-    'sequential' => 1,
-    'option.limit' => 9999,
-    'return' => 'relationship_type_id,is_active,start_date,end_date',
-    'contact_id_a' => $user->name,
-    'is_active' => 1,
-  ));
-  $civi_relationships_results = $civiapi->result();
-  if (isset($civi_relationships_results->values)) {
-    return $civi_relationships_results->values;
-  }
-  return FALSE;
-}
-
 function spcivisync_check_date($civi_relationship) {
   $timezone = new DateTimeZone(date_default_timezone(FALSE));
   $date = new DateTime('now', $timezone);
@@ -476,7 +430,7 @@ function spcivisync_get_civi_contact_fields($sync = TRUE) {
           $results[$value->name] = $value->title;
         }
         elseif (isset($value->label) && isset($value->groupTitle) && isset($value->name)) {
-          $results[$value->name . ':group:'] = $value->groupTitle . ': ' . $value->label;
+          $results[$value->name] = $value->groupTitle . ': ' . $value->label;
         }
       }
       variable_set('spcivisync_contact_fields', $results);
@@ -645,226 +599,189 @@ function spcivisync_get_account_fields() {
 }
 
 function spcivisync_sync_fields($users = array(), $test = FALSE, $drush_log = FALSE) {
-  set_time_limit(0);
+  if (!empty($users)) {
+    set_time_limit(0);
 
-  // Connect to civiapi.
-  $civiapi = spciviapi_get_api();
+    // Connect to civiapi.
+    $civiapi = spciviapi_get_api();
 
-  // Settings and variables.
-  $rules = variable_get('spcivisync_rules');
+    // Settings and variables.
+    $rules = variable_get('spcivisync_rules');
 
-  // Sync fields.
-  if (!empty($rules['field-field'])) {
-    if ($test) {
-      drupal_set_message('<strong>Synchronizatie CiviCRM velden met Drupal velden.</strong>');
-    }
-
-    foreach ($rules['field-field'] as $rule) {
-      if (!empty($rule['simple'])) {
-        spcivisync_sync_simple_field($users, $rule['simple'], $civiapi, $test, $drush_log);
+    // Sync fields.
+    if (!empty($rules['field-field'])) {
+      if ($test) {
+        drupal_set_message('<strong>Synchronizatie CiviCRM velden met Drupal velden.</strong>');
       }
-      elseif (!empty($rule['email'])) {
-        spcivisync_sync_email_field($users, $rule['email'], $civiapi, $test, $drush_log);
+
+      $simple_fields = array();
+      foreach ($rules['field-field'] as $rule) {
+        if (!empty($rule['simple']['simple_field'])) {
+          $simple_fields[] = $rule['simple']['simple_field'];
+        }
       }
-      elseif (!empty($rule['phone'])) {
-        spcivisync_sync_phone_field($users, $rule['phone'], $civiapi, $test, $drush_log);
+      $simple_fields_list = implode(',', $simple_fields);
+
+      // Make userlist.
+      $user_ids = array();
+      foreach ($users as $user) {
+        $users_uid_civid[$user->uid] = $user->name;
+        $users_civid_uid[$user->name] = $user->uid;
       }
-      elseif (!empty($rule['address'])) {
-        spcivisync_sync_address_field($users, $rule['address'], $civiapi, $test, $drush_log);
+
+      // Create query.
+      $query = array(
+        'options' => array('limit' => 9999),
+        'return' => $simple_fields_list,
+        'id' => array('IN' => $users_uid_civid),
+      );
+      foreach ($rules['field-field'] as $rule) {
+        if (!empty($rule['email'])) {
+          $query['api.Email.get'] = array(
+            'contact_id' => "\$value.contact_id",
+          );
+        }
+        elseif (!empty($rule['phone'])) {
+          $query['api.Phone.get'] = array(
+            'contact_id' => "\$value.contact_id",
+          );
+        }
+        elseif (!empty($rule['address'])) {
+          $query['api.Address.get'] = array(
+            'contact_id' => "\$value.contact_id",
+          );
+        }
       }
-    }
-  }
 
-  // Sync relation-field.
-  if (!empty($rules['relation-field'])) {
-
-    if ($test) {
-      drupal_set_message('<strong>Synchronizatie CiviCRM relaties met Drupal velden.</strong>');
-    }
-
-    foreach ($rules['relation-field'] as $rule) {
-      spcivisync_sync_relation_field($users, $rule, $civiapi, $test, $drush_log);
-    }
-  }
-  return;
-}
-
-function spcivisync_sync_simple_field($users, $rule, $civiapi, $test = FALSE, $drush_log = FALSE) {
-  $simple_field = $rule['simple_field'];
-  $drupal_field = $rule['drupal_field'];
-
-  // Check if it is a group field, and if so, get the group name instead of the id.
-  if (strpos($simple_field, ':group:')) {
-    // Set display name.
-    $simple_field = substr_replace($simple_field, '', strpos($simple_field, ':group:'));
-    $groupfield = TRUE;
-  }
-  else {
-    $groupfield = FALSE;
-  }
-
-  foreach ($users as $user) {
-    // Get civicrm fields for user.
-    if ($groupfield) {
-      $civiapi->Contact->Get(array(
-        'sequential' => 1,
-        'return' => $simple_field,
-        'id' => $user->name,
-      ));
+      // Process contact data.
+      $civiapi->Contact->Get($query);
       $results = $civiapi->result();
       if (!empty($results->values)) {
-        $id = $results->values[0]->$simple_field;
-        // Get display name.
-        $civiapi->Contact->Get(array(
-          'sequential' => 1,
-          'return' => 'display_name',
-          'id' => $id,
-        ));
-        $results = $civiapi->result();
-        if (!empty($results->values)) {
-          $value = $results->values[0]->display_name;
-          spcivisync_set_account_field_value($user, $drupal_field, $value, $test, $drush_log);
-        }
-        else {
-          spcivisync_set_account_field_value($user, $drupal_field, '', $test, $drush_log);
-          if (spcivisync_show_message()) {
-            drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $drupal_field)), 'error');
+        foreach ($results->values as $contact_data) {
+          // Load user.
+          $civi_id = $contact_data->contact_id;
+          $uid = $users_civid_uid[$civi_id];
+          $user_wrapper = entity_metadata_wrapper('user', $uid);
+          if (spcivisync_show_message() && $test) {
+            drupal_set_message(t('Drupal account id: @uid', array('@uid' => $uid)));
+            drupal_set_message(t('Civi contact id: @civid', array('@civid' => $civi_id)));
+          }
+          if (!empty($rules['field-field'])) {
+            foreach ($rules['field-field'] as $field_rule) {
+              $value = '';
+              // Process simple fields.
+              if (!empty($field_rule['simple'])) {
+                $drupal_field = $field_rule['simple']['drupal_field'];
+                $civi_field = $field_rule['simple']['simple_field'];
+                // Set account field and value.
+                if (!empty($contact_data->$civi_field)) {
+                  $value = $contact_data->$civi_field;
+                }
+              }
+              // Process email fields.
+              elseif (!empty($field_rule['email'])) {
+                $drupal_field = $field_rule['email']['drupal_field'];
+                if (!empty($contact_data->{'api.Email.get'}->values)) {
+                  foreach ($contact_data->{'api.Email.get'}->values as $email_data) {
+                    // Primary field.
+                    if (!empty($field_rule['email']['email_primary_field'])) {
+                      if (!empty($email_data->is_primary)) {
+                        if (!empty($email_data->email)) {
+                          $value = $email_data->email;
+                        }
+                      }
+                    }
+                    // Location_type id field.
+                    elseif (!empty($field_rule['email']['email_location_field'])) {
+                      if ($field_rule['email']['email_location_field'] === $email_data->location_type_id) {
+                        if (!empty($email_data->email)) {
+                          $value = $email_data->email;
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+              // Process phone fields.
+              elseif (!empty($field_rule['phone'])) {
+                $drupal_field = $field_rule['phone']['drupal_field'];
+                if (!empty($contact_data->{'api.Phone.get'}->values)) {
+                  foreach ($contact_data->{'api.Phone.get'}->values as $phone_data) {
+                    // Primary field.
+                    if (!empty($field_rule['phone']['phone_primary_field'])) {
+                      if (!empty($phone_data->is_primary)) {
+                        if (!empty($phone_data->phone_numeric)) {
+                          $value = $phone_data->phone_numeric;
+                        }
+                      }
+                    }
+                    // Location_type id field.
+                    elseif (!empty($field_rule['phone']['phone_location_field'])) {
+                      if ($field_rule['phone']['phone_location_field'] === $phone_data->location_type_id) {
+                        if (!empty($field_rule['phone']['phone_type_field'])) {
+                          if ($field_rule['phone']['phone_type_field'] === $phone_data->phone_type_id) {
+                            if (!empty($phone_data->phone_numeric)) {
+                              $value = $phone_data->phone_numeric;
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+              // Process address fields.
+              elseif (!empty($field_rule['address'])) {
+                $drupal_field = $field_rule['address']['drupal_field'];
+                if (!empty($contact_data->{'api.Address.get'}->values)) {
+                  foreach ($contact_data->{'api.Address.get'}->values as $address_data) {
+                    // Primary field.
+                    if (!empty($field_rule['address']['address_primary_field'])) {
+                      if (!empty($address_data->is_primary)) {
+                        if (!empty($address_data->$field_rule['address']['address_field'])) {
+                          $value = $address_data->$field_rule['address']['address_field'];
+                        }
+                      }
+                    }
+                    // Location_type id field.
+                    elseif (!empty($field_rule['address']['address_location_field'])) {
+                      if ($field_rule['address']['address_location_field'] === $address_data->location_type_id) {
+                        if (!empty($address_data->$field_rule['address']['address_field'])) {
+                          $value = $address_data->$field_rule['address']['address_field'];
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+              spcivisync_set_account_field_value($user_wrapper, $drupal_field, $value, $test, $drush_log);
+              if (empty($value)) {
+                if (spcivisync_show_message() && $test) {
+                  drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $drupal_field)), 'error');
+                }
+              }
+            }
+          }
+          if (!$test) {
+            if (spcivisync_show_message() && $test) {
+              drupal_set_message(t('Veld waarden opgeslagen'));
+            }
+            $user_wrapper->save();
           }
         }
       }
-      else {
-        spcivisync_set_account_field_value($user, $drupal_field, '', $test, $drush_log);
-        if (spcivisync_show_message()) {
-          drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $drupal_field)), 'error');
-        }
+    }
+    return;
+
+    // Sync relation-field.
+    if (!empty($rules['relation-field'])) {
+
+      if ($test) {
+        drupal_set_message('<strong>Synchronizatie CiviCRM relaties met Drupal velden.</strong>');
       }
-    }
-    else {
-      // Set plain field value.
-      $civiapi->Contact->Get(array(
-        'sequential' => 1,
-        'return' => $simple_field,
-        'id' => $user->name,
-      ));
-      $results = $civiapi->result();
-      if (isset($results->values[0]->$simple_field)) {
-        $value = $results->values[0]->$simple_field;
-        spcivisync_set_account_field_value($user, $drupal_field, $value, $test, $drush_log);
-      }
-      else {
-        spcivisync_set_account_field_value($user, $drupal_field, '', $test, $drush_log);
-        if (spcivisync_show_message()) {
-          drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $drupal_field)), 'error');
-        }
-      }
-    }
-  }
-}
 
-function spcivisync_sync_email_field($users, $rule, $civiapi, $test = FALSE, $drush_log = FALSE) {
-
-  foreach ($users as $user) {
-    if (!empty($rule['email_primary_field'])) {
-      $query = array(
-        'sequential' => 1,
-        'return' => 'email',
-        'is_primary' => 1,
-        'contact_id' => $user->name,
-      );
-    }
-    else {
-      $query = array(
-        'sequential' => 1,
-        'return' => 'email',
-        'location_type_id' => $rule['email_location_field'],
-        'contact_id' => $user->name,
-      );
-    }
-
-    // Set plain field value.
-    $civiapi->Email->Get($query);
-    $results = $civiapi->result();
-    if (isset($results->values[0]->email)) {
-      $value = $results->values[0]->email;
-      spcivisync_set_account_field_value($user, $rule['drupal_field'], $value, $test, $drush_log);
-    }
-    else {
-      spcivisync_set_account_field_value($user, $rule['drupal_field'], '', $test, $drush_log);
-      if (spcivisync_show_message()) {
-        drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $rule['drupal_field'])), 'error');
-      }
-    }
-  }
-}
-
-function spcivisync_sync_phone_field($users, $rule, $civiapi, $test = FALSE, $drush_log = FALSE) {
-
-  foreach ($users as $user) {
-    if (!empty($rule['phone_primary_field'])) {
-      $query = array(
-        'sequential' => 1,
-        'return' => 'phone',
-        'is_primary' => 1,
-        'contact_id' => $user->name,
-      );
-    }
-    else {
-      $query = array(
-        'sequential' => 1,
-        'return' => 'phone',
-        'location_type_id' => $rule['phone_location_field'],
-        'phone_type_id' => $rule['phone_type_field'],
-        'contact_id' => $user->name,
-      );
-    }
-
-    // Set plain field value.
-    $civiapi->Phone->Get($query);
-    $results = $civiapi->result();
-    if (isset($results->values[0]->phone)) {
-      $value = $results->values[0]->phone;
-      spcivisync_set_account_field_value($user, $rule['drupal_field'], $value, $test, $drush_log);
-    }
-    else {
-      spcivisync_set_account_field_value($user, $rule['drupal_field'], '', $test, $drush_log);
-      if (spcivisync_show_message()) {
-        drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $rule['drupal_field'])), 'error');
-      }
-    }
-  }
-}
-
-function spcivisync_sync_address_field($users, $rule, $civiapi, $test = FALSE, $drush_log = FALSE) {
-
-  foreach ($users as $user) {
-    if (!empty($rule['address_primary_field'])) {
-      $query = array(
-        'sequential' => 1,
-        'return' => $rule['address_field'],
-        'is_primary' => 1,
-        'contact_id' => $user->name,
-      );
-    }
-    else {
-      $query = array(
-        'sequential' => 1,
-        'return' => $rule['address_field'],
-        'location_type_id' => $rule['address_location_field'],
-        'contact_id' => $user->name,
-      );
-    }
-
-    // Set plain field value.
-    $civiapi->Address->Get($query);
-    $results = $civiapi->result();
-    if (isset($results->values[0]->$address_field)) {
-      $value = $results->values[0]->$address_field;
-      spcivisync_set_account_field_value($user, $rule['drupal_field'], $value, $test, $drush_log);
-    }
-    else {
-      spcivisync_set_account_field_value($user, $rule['drupal_field'], '', $test, $drush_log);
-      if (spcivisync_show_message()) {
-        drupal_set_message(t('Geen waarde voor @field gevonden', array('@field' => $rule['drupal_field'])), 'error');
+      foreach ($rules['relation-field'] as $rule) {
+        spcivisync_sync_relation_field($users, $rule, $civiapi, $test, $drush_log);
       }
     }
   }
@@ -932,12 +849,12 @@ function spcivisync_get_users() {
   return $users;
 }
 
-function spcivisync_set_account_field_value($user, $fieldname, $value, $test = FALSE, $drush_log = FALSE) {
+function spcivisync_set_account_field_value(&$user_wrapper, $fieldname, $value, $test = FALSE, $drush_log = FALSE) {
   if ($drush_log) {
-    drush_log('Syncing: ' . $user->name . ' (' . $fieldname . ')', 'ok');
+    drush_log('Syncing: ' . $user_wrapper->name->value() . ' (' . $fieldname . ')', 'ok');
   }
-  $user_wrapper = entity_metadata_wrapper('user', $user);
   $info = field_info_field($fieldname);
+  $drupal_fields = spcivisync_get_account_fields();
   switch ($info['type']) {
     case 'text':
       if ($info['cardinality'] === '1' && is_array($value)) {
@@ -947,12 +864,8 @@ function spcivisync_set_account_field_value($user, $fieldname, $value, $test = F
         $value = array($value);
       }
       $user_wrapper->$fieldname->set($value);
-      if (!$test) {
-        $user_wrapper->save();
-      }
-      else {
+      if ($test) {
         if (spcivisync_show_message()) {
-          $drupal_fields = spcivisync_get_account_fields();
           $output = is_array($value) ? implode(',', $value) : $value;
           drupal_set_message('Veld: ' . $drupal_fields[$fieldname] . '<br/>Waarde: ' . $output);
         }
@@ -962,11 +875,7 @@ function spcivisync_set_account_field_value($user, $fieldname, $value, $test = F
     case 'number_integer':
       if (filter_var($value, FILTER_VALIDATE_INT)) {
         $user_wrapper->$fieldname->set($value);
-        if (!$test) {
-          $user_wrapper->save();
-        }
-        else {
-          $drupal_fields = spcivisync_get_account_fields();
+        if ($test) {
           if (spcivisync_show_message()) {
             drupal_set_message('Veld: ' . $drupal_fields[$fieldname] . '<br/>Waarde: ' . $value);
           }
@@ -982,11 +891,7 @@ function spcivisync_set_account_field_value($user, $fieldname, $value, $test = F
     case 'date':
       if (strtotime($value)) {
         $user_wrapper->$fieldname->set(strtotime($value));
-        if (!$test) {
-          $user_wrapper->save();
-        }
-        else {
-          $drupal_fields = spcivisync_get_account_fields();
+        if ($test) {
           if (spcivisync_show_message()) {
             drupal_set_message('Veld: ' . $drupal_fields[$fieldname] . '<br/>Waarde: ' . $value . ' omgezet naar ' . strtotime($value) . ' (timestamp)');
           }
