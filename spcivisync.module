@@ -281,7 +281,10 @@ function spcivisync_sync_roles($users = array(), $test = FALSE, $drush_log = FAL
   }
 
   // Set users roles.
-  $admin_rid = user_role_load_by_name('administrator')->rid;
+  $admin_role = user_role_load_by_name('administrator');
+  if ($admin_role) {
+    $admin_rid = user_role_load_by_name('administrator')->rid;
+  }
   $authenticated_user_role = user_role_load_by_name('authenticated user');
   $roles_to_set = spcivisync_get_roles_to_sync();
 
@@ -333,7 +336,7 @@ function spcivisync_sync_roles($users = array(), $test = FALSE, $drush_log = FAL
       }
     }
     // Make sure administrators roles are not changed.
-    if (!isset($user->roles[$admin_rid])) {
+    if (empty($admin_rid) || !isset($user->roles[$admin_rid])) {
       $user_roles = $user->roles;
       // Unset role that is managed by sync rules, but should not be set.
       foreach ($user_roles as $rid => $role_name) {
@@ -656,6 +659,12 @@ function spcivisync_sync_fields($users = array(), $test = FALSE, $drush_log = FA
       // Process contact data.
       $civiapi->Contact->Get($query);
       $results = $civiapi->result();
+      if (spcivisync_show_message() && $test) {
+	if ($results->is_error) {
+	  drupal_set_message('Fout: @error', array('@error' => $results->error_message), 'error');
+	}
+      }
+	
       if (!empty($results->values)) {
         foreach ($results->values as $contact_data) {
           // Load user.
@@ -830,17 +839,23 @@ function spcivisync_sync_relation_field($users, $rule, $civiapi, $test = FALSE, 
 }
 
 function spcivisync_get_users() {
-  $admin_rid = user_role_load_by_name('administrator')->rid;
+  $admin_role = user_role_load_by_name('administrator');
+  if ($admin_role) {
+    $admin_rid = $admin_role->rid;
+  }
   // Get user(s).
   $users = entity_load('user');
+
   // Remove anonymous user.
   unset($users[0]);
 
   // Remove admin users;
   foreach ($users as $id => $user) {
     // Do not sync admin users.
-    if (isset($user->roles[$admin_rid])) {
-      unset($users[$id]);
+    if (!empty($admin_rid)) {
+      if (isset($user->roles[$admin_rid])) {
+	unset($users[$id]);
+      }
     }
     if (filter_var($user->name, FILTER_VALIDATE_INT) === FALSE) {
       unset($users[$id]);
