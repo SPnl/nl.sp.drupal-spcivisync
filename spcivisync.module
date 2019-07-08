@@ -269,7 +269,7 @@ function spcivisync_sync_roles($users = array(), $test = FALSE, $drush_log = FAL
         $results = $civiapi->result();
         if (isset($results->values)) {
           foreach ($results->values as $relationship) {
-            if (isset($relationship->contact_id_a)) {
+            if (isset($relationship->contact_id_a) && $relationship->is_active) {
               if (filter_var($relationship->contact_id_a, FILTER_VALIDATE_INT) !== FALSE) {
                 $users_roles[$relationship->contact_id_a][$role_id] = $role_id;
               }
